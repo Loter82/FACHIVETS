@@ -1,0 +1,39 @@
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Env / secrets
+.env
+.env.*
+*.local
+secrets/
+
+# Build / dependency dirs
+node_modules/
+dist/
+build/
+out/
+bin/
+obj/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
