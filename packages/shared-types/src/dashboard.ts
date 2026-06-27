@@ -58,3 +58,50 @@ export interface DashboardOverviewDto {
   topCustomers: TopCustomerDto[];
   topProducts: TopProductDto[];
 }
+
+/// Рядок у drill-down списку клієнтів за період.
+export interface DashboardCustomerRow {
+  partnerId: number;
+  /// Внутрішній cuid mirror_partners (для лінків на профіль). null, якщо клієнт ще не дзеркалився.
+  customerId: string | null;
+  displayName: string;
+  cardNumber: string | null;
+  ordersCount: number;
+  revenue: number;
+  returnsSum: number;
+  netRevenue: number;
+  lastPurchaseAt: string | null;
+}
+
+export interface DashboardCustomersResponse {
+  period: DashboardPeriod;
+  from: string | null;
+  to: string | null;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: DashboardCustomerRow[];
+}
+
+/// Позиція, придбана клієнтом за період (агрегована по товару).
+export interface DashboardCustomerItem {
+  goodId: number;
+  name: string | null;
+  code: string | null;
+  qtty: number;
+  revenue: number;
+  /// Скільки документів містили цей товар.
+  ordersCount: number;
+}
+
+export interface DashboardCustomerItemsResponse {
+  period: DashboardPeriod;
+  from: string | null;
+  to: string | null;
+  partnerId: number;
+  customerId: string | null;
+  displayName: string;
+  totalRevenue: number;
+  totalQtty: number;
+  items: DashboardCustomerItem[];
+}

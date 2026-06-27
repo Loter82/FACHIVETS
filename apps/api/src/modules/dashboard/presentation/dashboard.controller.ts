@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { JwtPayload } from '@unipro-crm/shared-types';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -6,7 +6,11 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { JwtAuthGuard } from '@/modules/auth/infrastructure/guards/jwt-auth.guard';
 import { DashboardService } from '../application/dashboard.service';
-import { DashboardOverviewQueryDto } from './dto/dashboard.dto';
+import {
+  DashboardCustomerItemsQueryDto,
+  DashboardCustomersQueryDto,
+  DashboardOverviewQueryDto,
+} from './dto/dashboard.dto';
 
 @ApiTags('dashboard')
 @ApiBearerAuth()
@@ -19,5 +23,33 @@ export class DashboardController {
   @Get('overview')
   overview(@CurrentUser() user: JwtPayload, @Query() q: DashboardOverviewQueryDto) {
     return this.dashboard.overview(user.tenantId, q.sourceId, q.period ?? 'month');
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER', 'VIEWER')
+  @Get('customers')
+  customers(@CurrentUser() user: JwtPayload, @Query() q: DashboardCustomersQueryDto) {
+    return this.dashboard.customersBreakdown(
+      user.tenantId,
+      q.sourceId,
+      q.period ?? 'month',
+      q.page ?? 1,
+      q.pageSize ?? 50,
+    );
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER', 'VIEWER')
+  @Get('customers/:partnerId/items')
+  customerItems(
+    @CurrentUser() user: JwtPayload,
+    @Param('partnerId', ParseIntPipe) partnerId: number,
+    @Query() q: DashboardCustomerItemsQueryDto,
+  ) {
+    return this.dashboard.customerItems(
+      user.tenantId,
+      q.sourceId,
+      partnerId,
+      q.period ?? 'month',
+      q.limit ?? 200,
+    );
   }
 }

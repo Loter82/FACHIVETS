@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type {
+  DashboardCustomerItem,
+  DashboardCustomerItemsResponse,
+  DashboardCustomerRow,
+  DashboardCustomersResponse,
   DashboardKpiDto,
   DashboardOverviewDto,
   DashboardPeriod,
@@ -320,6 +324,204 @@ export class DashboardService {
       qtty: Number(r.qtty ?? 0),
       revenue: Number(r.revenue ?? 0),
     }));
+  }
+
+  async customersBreakdown(
+    tenantId: string,
+    sourceIdOverride: string | undefined,
+    period: DashboardPeriod,
+    page = 1,
+    pageSize = 50,
+  ): Promise<DashboardCustomersResponse> {
+    const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
+    const range = this.resolveRange(period);
+    const safePage = Math.max(1, page);
+    const safePageSize = Math.min(200, Math.max(1, pageSize));
+    const offset = (safePage - 1) * safePageSize;
+
+    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const returnTypes = Prisma.join(RETURN_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const dateFilter = range.from
+      ? Prisma.sql`AND d."dateTime" >= ${range.from} AND d."dateTime" < ${range.to}`
+      : Prisma.empty;
+
+    interface Row {
+      partner_id: number;
+      customer_id: string | null;
+      display_name: string | null;
+      card_number: string | null;
+      orders_count: bigint;
+      revenue: number | string | null;
+      returns_sum: number | string | null;
+      last_purchase_at: Date | null;
+    }
+    interface CountRow {
+      total: bigint;
+    }
+
+    const [rows, totalRows] = await Promise.all([
+      this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        SELECT
+          d."partnerId" AS partner_id,
+          p.id AS customer_id,
+          p."displayName" AS display_name,
+          p."cardNumber" AS card_number,
+          COUNT(*) FILTER (WHERE d."docType" IN (${saleTypes})) AS orders_count,
+          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${saleTypes})), 0) AS revenue,
+          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${returnTypes})), 0) AS returns_sum,
+          MAX(d."dateTime") FILTER (WHERE d."docType" IN (${saleTypes})) AS last_purchase_at
+        FROM mirror_documents d
+        LEFT JOIN mirror_partners p
+          ON p."tenantId" = d."tenantId"
+          AND p."dataSourceId" = d."dataSourceId"
+          AND p."externalId" = d."partnerId"
+        WHERE d."tenantId" = ${tenantId}
+          AND d."dataSourceId" = ${dataSourceId}
+          AND d.state = 0
+          AND d."partnerId" IS NOT NULL
+          AND d."partnerId" > 0
+          ${dateFilter}
+        GROUP BY d."partnerId", p.id, p."displayName", p."cardNumber"
+        HAVING COUNT(*) FILTER (WHERE d."docType" IN (${saleTypes})) > 0
+        ORDER BY revenue DESC
+        LIMIT ${safePageSize} OFFSET ${offset}
+      `),
+      this.prisma.$queryRaw<CountRow[]>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS total FROM (
+          SELECT d."partnerId"
+          FROM mirror_documents d
+          WHERE d."tenantId" = ${tenantId}
+            AND d."dataSourceId" = ${dataSourceId}
+            AND d.state = 0
+            AND d."partnerId" IS NOT NULL
+            AND d."partnerId" > 0
+            AND d."docType" IN (${saleTypes})
+            ${dateFilter}
+          GROUP BY d."partnerId"
+        ) t
+      `),
+    ]);
+
+    const items: DashboardCustomerRow[] = rows.map((r) => {
+      const revenue = Number(r.revenue ?? 0);
+      const returnsSum = Number(r.returns_sum ?? 0);
+      return {
+        partnerId: r.partner_id,
+        customerId: r.customer_id,
+        displayName: r.display_name ?? `Партнер #${r.partner_id}`,
+        cardNumber: r.card_number,
+        ordersCount: Number(r.orders_count ?? 0),
+        revenue,
+        returnsSum,
+        netRevenue: revenue - returnsSum,
+        lastPurchaseAt: r.last_purchase_at ? r.last_purchase_at.toISOString() : null,
+      };
+    });
+
+    return {
+      period,
+      from: range.from ? range.from.toISOString() : null,
+      to: range.to ? range.to.toISOString() : null,
+      page: safePage,
+      pageSize: safePageSize,
+      total: Number(totalRows[0]?.total ?? 0),
+      items,
+    };
+  }
+
+  async customerItems(
+    tenantId: string,
+    sourceIdOverride: string | undefined,
+    partnerId: number,
+    period: DashboardPeriod,
+    limit = 200,
+  ): Promise<DashboardCustomerItemsResponse> {
+    const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
+    const range = this.resolveRange(period);
+    const safeLimit = Math.min(500, Math.max(1, limit));
+
+    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const dateFilter = range.from
+      ? Prisma.sql`AND d."dateTime" >= ${range.from} AND d."dateTime" < ${range.to}`
+      : Prisma.empty;
+
+    interface ItemRow {
+      good_id: string;
+      name: string | null;
+      code: string | null;
+      qtty: number | string | null;
+      revenue: number | string | null;
+      orders_count: bigint;
+    }
+    interface PartnerRow {
+      customer_id: string | null;
+      display_name: string | null;
+    }
+
+    const [itemRows, partnerRows] = await Promise.all([
+      this.prisma.$queryRaw<ItemRow[]>(Prisma.sql`
+        SELECT
+          i."externalGoodId"::text AS good_id,
+          g.name AS name,
+          g.code AS code,
+          COALESCE(SUM(i.qtty), 0) AS qtty,
+          COALESCE(SUM(i.sum), 0) AS revenue,
+          COUNT(DISTINCT d."externalId") AS orders_count
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        LEFT JOIN mirror_goods g
+          ON g."tenantId" = i."tenantId"
+          AND g."dataSourceId" = i."dataSourceId"
+          AND g."externalId"::bigint = i."externalGoodId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND d.state = 0
+          AND d."docType" IN (${saleTypes})
+          AND d."partnerId" = ${partnerId}
+          ${dateFilter}
+        GROUP BY i."externalGoodId", g.name, g.code
+        ORDER BY revenue DESC
+        LIMIT ${safeLimit}
+      `),
+      this.prisma.$queryRaw<PartnerRow[]>(Prisma.sql`
+        SELECT
+          id AS customer_id,
+          "displayName" AS display_name
+        FROM mirror_partners
+        WHERE "tenantId" = ${tenantId}
+          AND "dataSourceId" = ${dataSourceId}
+          AND "externalId" = ${partnerId}
+        LIMIT 1
+      `),
+    ]);
+
+    const items: DashboardCustomerItem[] = itemRows.map((r) => ({
+      goodId: Number(r.good_id),
+      name: r.name,
+      code: r.code,
+      qtty: Number(r.qtty ?? 0),
+      revenue: Number(r.revenue ?? 0),
+      ordersCount: Number(r.orders_count ?? 0),
+    }));
+
+    const totalRevenue = items.reduce((s, i) => s + i.revenue, 0);
+    const totalQtty = items.reduce((s, i) => s + i.qtty, 0);
+    const partner = partnerRows[0];
+
+    return {
+      period,
+      from: range.from ? range.from.toISOString() : null,
+      to: range.to ? range.to.toISOString() : null,
+      partnerId,
+      customerId: partner?.customer_id ?? null,
+      displayName: partner?.display_name ?? `Партнер #${partnerId}`,
+      totalRevenue,
+      totalQtty,
+      items,
+    };
   }
 
   private resolveRange(period: DashboardPeriod): PeriodRange {

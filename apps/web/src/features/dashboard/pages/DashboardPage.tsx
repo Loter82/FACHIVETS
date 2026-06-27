@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { DashboardKpiDto, DashboardPeriod } from '@unipro-crm/shared-types';
 import { dashboardApi } from '../api';
+import { CustomersBreakdownModal } from '../components/CustomersBreakdownModal';
 import { fmt } from '@/shared/lib/format';
 import { useAuthStore } from '@/app/auth-store';
 
@@ -28,6 +29,7 @@ const PERIODS: Array<{ value: DashboardPeriod; label: string }> = [
 export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const [period, setPeriod] = useState<DashboardPeriod>('month');
+  const [customersModalOpen, setCustomersModalOpen] = useState(false);
 
   const q = useQuery({
     queryKey: ['dashboard-overview', period],
@@ -99,6 +101,8 @@ export function DashboardPage() {
           value={fmt.num(kpi?.uniqueCustomers ?? 0)}
           delta={kpi ? fmt.delta(kpi.uniqueCustomers, kpi.uniqueCustomersPrev) : null}
           loading={q.isLoading}
+          onClick={() => setCustomersModalOpen(true)}
+          hint="Натисніть, щоб бачити хто і на яку суму"
         />
       </div>
 
@@ -215,6 +219,13 @@ export function DashboardPage() {
           </table>
         </div>
       </div>
+
+      <CustomersBreakdownModal
+        open={customersModalOpen}
+        period={period}
+        periodLabel={PERIODS.find((p) => p.value === period)?.label ?? ''}
+        onClose={() => setCustomersModalOpen(false)}
+      />
     </div>
   );
 }
@@ -225,15 +236,30 @@ function KpiCard({
   value,
   delta,
   loading,
+  onClick,
+  hint,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   delta: { value: number; positive: boolean } | null;
   loading: boolean;
+  onClick?: () => void;
+  hint?: string;
 }) {
+  const clickable = !!onClick;
+  const Wrapper: React.ElementType = clickable ? 'button' : 'div';
   return (
-    <div className="card-elevated p-5">
+    <Wrapper
+      type={clickable ? 'button' : undefined}
+      onClick={onClick}
+      title={hint}
+      className={`card-elevated p-5 text-left ${
+        clickable
+          ? 'cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/40'
+          : ''
+      }`}
+    >
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-medium text-base-content/50">{label}</span>
         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-base-200">
@@ -259,7 +285,7 @@ function KpiCard({
           {Math.abs(delta.value).toFixed(1)}% vs попередній
         </div>
       )}
-    </div>
+    </Wrapper>
   );
 }
 
