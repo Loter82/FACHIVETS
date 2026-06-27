@@ -51,9 +51,9 @@ async function bootstrap(): Promise<void> {
     SwaggerModule.setup(`${prefix}/docs`, app, document);
   }
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   // eslint-disable-next-line no-console
-  console.info(`Unipro CRM API готовий на http://localhost:${port}/${prefix}`);
+  console.info(`Unipro CRM API готовий на http://0.0.0.0:${port}/${prefix}`);
 }
 
 bootstrap().catch((err) => {
