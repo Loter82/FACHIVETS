@@ -61,9 +61,9 @@ export function SyncPage() {
   }
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Синхронізація з Unipro</h1>
+          <h1 className="text-lg font-bold md:text-2xl">Синхронізація з Unipro</h1>
           <p className="text-sm text-base-content/70">
             Підтягуємо довідники і документи з Unipro у локальне дзеркало для CRM.
           </p>
@@ -106,7 +106,7 @@ function SourcePicker({
 }) {
   return (
     <select
-      className="select select-bordered"
+      className="select select-bordered select-sm w-full sm:select-md sm:w-auto"
       value={selectedId ?? ''}
       onChange={(e) => onSelect(e.target.value)}
     >
@@ -162,9 +162,9 @@ function SyncDashboard({ sourceId }: { sourceId: string }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <button
-          className="btn btn-primary"
+          className="btn btn-primary btn-sm w-full sm:w-auto sm:btn-md"
           disabled={allBusy || runEntity.isPending}
           onClick={() => runAll.mutate()}
         >
@@ -192,7 +192,7 @@ function SyncDashboard({ sourceId }: { sourceId: string }) {
         )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {SYNCABLE.map((entity) => {
           const cursor = cursorMap.get(entity);
           const count = status.data?.counts[entity] ?? 0;

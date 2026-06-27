@@ -58,16 +58,16 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
+      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:p-3"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-base-100 shadow-2xl"
+        className="flex h-full w-full max-w-5xl flex-col overflow-hidden bg-base-100 shadow-2xl sm:max-h-[90vh] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-base-200 px-5 py-4">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between border-b border-base-200 px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             {selected && (
               <button
                 className="btn btn-ghost btn-sm btn-square rounded-xl"
@@ -77,24 +77,25 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
                 <ArrowLeft size={16} />
               </button>
             )}
-            <div>
-              <h2 className="text-base font-semibold">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-semibold sm:text-base">
                 {selected ? selected.displayName : 'Клієнти за період'}
               </h2>
-              <p className="text-xs text-base-content/50">
+              <p className="truncate text-[11px] text-base-content/50 sm:text-xs">
                 {selected ? 'Що саме купив за цей період' : `Хто і на яку суму купив · ${periodLabel}`}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {selected?.customerId && (
               <Link
                 to={`/customers/${selected.customerId}`}
-                className="btn btn-ghost btn-sm gap-1.5 rounded-xl text-xs"
+                className="btn btn-ghost btn-sm btn-square gap-1.5 rounded-xl text-xs sm:btn-square-md sm:w-auto sm:px-3"
                 onClick={onClose}
+                aria-label="Профіль"
               >
                 <ExternalLink size={13} />
-                Профіль
+                <span className="hidden sm:inline">Профіль</span>
               </Link>
             )}
             <button
@@ -114,7 +115,7 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
 
         {/* Footer pagination (list view only) */}
         {!selected && listQ.data && listQ.data.total > PAGE_SIZE && (
-          <div className="flex items-center justify-between border-t border-base-200 px-5 py-3">
+          <div className="flex flex-col items-center justify-between gap-2 border-t border-base-200 px-4 py-3 sm:flex-row sm:px-5">
             <span className="text-xs text-base-content/40">
               Сторінка {page} з {totalPages} · {listQ.data.total} клієнтів
             </span>
@@ -164,18 +165,59 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
       );
     }
     return (
-      <table className="table table-sm">
-        <thead>
-          <tr className="border-b border-base-200 text-xs text-base-content/40">
-            <th className="bg-transparent">#</th>
-            <th className="bg-transparent">Клієнт</th>
-            <th className="bg-transparent">Картка</th>
-            <th className="bg-transparent text-right">Чеків</th>
-            <th className="bg-transparent text-right">Виторг</th>
-            <th className="bg-transparent">Остання покупка</th>
-          </tr>
-        </thead>
-        <tbody>
+      <>
+        {/* Mobile: card list */}
+        <ul className="divide-y divide-base-200 md:hidden">
+          {listQ.data.items.map((c, i) => (
+            <li
+              key={c.partnerId}
+              className="flex cursor-pointer items-start gap-3 px-4 py-3 active:bg-base-200/60"
+              onClick={() =>
+                setSelected({
+                  partnerId: c.partnerId,
+                  displayName: c.displayName,
+                  customerId: c.customerId,
+                })
+              }
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-base-200 text-[10px] font-semibold text-base-content/60">
+                {(page - 1) * PAGE_SIZE + i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{c.displayName}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-base-content/50">
+                  {c.cardNumber && <span className="font-mono">{c.cardNumber}</span>}
+                  <span>{fmt.num(c.ordersCount)} чеків</span>
+                  {c.lastPurchaseAt && <span>{fmt.date(c.lastPurchaseAt)}</span>}
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="text-sm font-semibold tabular-nums text-primary">
+                  {fmt.money(c.netRevenue)}
+                </div>
+                {c.returnsSum > 0 && (
+                  <div className="text-[10px] text-base-content/40">
+                    поверн.: {fmt.money(c.returnsSum)}
+                  </div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {/* Desktop: table */}
+        <table className="hidden table table-sm md:table">
+          <thead>
+            <tr className="border-b border-base-200 text-xs text-base-content/40">
+              <th className="bg-transparent">#</th>
+              <th className="bg-transparent">Клієнт</th>
+              <th className="bg-transparent">Картка</th>
+              <th className="bg-transparent text-right">Чеків</th>
+              <th className="bg-transparent text-right">Виторг</th>
+              <th className="bg-transparent">Остання покупка</th>
+            </tr>
+          </thead>
+          <tbody>
           {listQ.data.items.map((c, i) => (
             <tr
               key={c.partnerId}
@@ -210,6 +252,7 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
           ))}
         </tbody>
       </table>
+      </>
     );
   }
 
@@ -237,12 +280,34 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
     }
     return (
       <>
-        <div className="grid grid-cols-3 gap-3 border-b border-base-200 bg-base-200/30 px-5 py-4">
+        <div className="grid grid-cols-3 gap-2 border-b border-base-200 bg-base-200/30 px-4 py-3 sm:gap-3 sm:px-5 sm:py-4">
           <Stat label="Сума" value={fmt.money(itemsQ.data.totalRevenue)} />
           <Stat label="Кількість" value={fmt.num(itemsQ.data.totalQtty, 2)} />
           <Stat label="Позицій" value={fmt.num(itemsQ.data.items.length)} />
         </div>
-        <table className="table table-sm">
+
+        {/* Mobile: card list */}
+        <ul className="divide-y divide-base-200 md:hidden">
+          {itemsQ.data.items.map((it, i) => (
+            <li key={it.goodId} className="flex items-start gap-3 px-4 py-3">
+              <span className="shrink-0 text-[11px] text-base-content/40">{i + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium">{it.name ?? `Товар #${it.goodId}`}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-base-content/50">
+                  <span className="font-mono">{it.code ?? '—'}</span>
+                  <span>{fmt.num(it.qtty, 2)} шт.</span>
+                  <span>{fmt.num(it.ordersCount)} чеків</span>
+                </div>
+              </div>
+              <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                {fmt.money(it.revenue)}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {/* Desktop: table */}
+        <table className="hidden table table-sm md:table">
           <thead>
             <tr className="border-b border-base-200 text-xs text-base-content/40">
               <th className="w-8 bg-transparent">#</th>
@@ -279,7 +344,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-base-content/40">{label}</div>
-      <div className="mt-0.5 text-lg font-bold tabular-nums">{value}</div>
+      <div className="mt-0.5 text-sm font-bold tabular-nums sm:text-lg">{value}</div>
     </div>
   );
 }

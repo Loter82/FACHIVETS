@@ -48,7 +48,7 @@ export function CustomersListPage() {
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Клієнти</h1>
+          <h1 className="text-lg font-semibold md:text-xl">Клієнти</h1>
           <p className="mt-0.5 text-sm text-base-content/50">
             {q.data ? `${q.data.total} записів` : 'Завантаження...'}
           </p>
@@ -56,17 +56,17 @@ export function CustomersListPage() {
       </div>
 
       <div className="card-elevated overflow-hidden">
-        <div className="px-5 py-4">
-          <form onSubmit={onSubmitSearch} className="flex flex-wrap items-center gap-3">
+        <div className="px-4 py-4 md:px-5">
+          <form onSubmit={onSubmitSearch} className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
             {/* Search */}
-            <div className="relative">
+            <div className="relative w-full md:w-72">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30" />
               <input
                 type="search"
                 placeholder="Ім'я, код, картка, телефон..."
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
-                className="input input-bordered input-sm rounded-xl pl-9 pr-4 w-72 bg-base-100"
+                className="input input-bordered input-sm w-full rounded-xl bg-base-100 pl-9 pr-8"
               />
               {search && (
                 <button
@@ -78,11 +78,11 @@ export function CustomersListPage() {
                 </button>
               )}
             </div>
-            <button type="submit" className="btn btn-primary btn-sm rounded-xl">
+            <button type="submit" className="btn btn-primary btn-sm w-full rounded-xl md:w-auto">
               Шукати
             </button>
 
-            <div className="ml-auto flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 md:ml-auto">
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -108,7 +108,61 @@ export function CustomersListPage() {
           </form>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile: card list */}
+        <div className="md:hidden">
+          {q.isLoading && (
+            <div className="flex justify-center py-10">
+              <span className="loading loading-spinner loading-md text-primary" />
+            </div>
+          )}
+          {q.error && (
+            <div className="px-4 py-6 text-center text-sm text-error">Помилка завантаження</div>
+          )}
+          {q.data && q.data.items.length === 0 && (
+            <div className="py-10 text-center text-sm text-base-content/40">Нічого не знайдено</div>
+          )}
+          <ul className="divide-y divide-base-200">
+            {q.data?.items.map((c) => (
+              <li key={c.id}>
+                <Link
+                  to={`/customers/${c.id}`}
+                  className="flex flex-col gap-1 px-4 py-3 active:bg-base-200/60"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-base-content">{c.displayName}</div>
+                      {c.phones.length > 0 && (
+                        <div className="truncate text-xs text-base-content/50">{c.phones[0]}</div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-sm font-semibold tabular-nums">{fmt.money(c.netRevenue)}</div>
+                      <div className="text-[10px] text-base-content/40">
+                        {fmt.num(c.ordersCount)} чеків
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-base-content/50">
+                    {c.cardNumber && (
+                      <span className="rounded-full bg-base-200 px-2 py-0.5 font-mono">
+                        {c.cardNumber}
+                      </span>
+                    )}
+                    {c.groupName && (
+                      <span className="rounded-full bg-base-200 px-2 py-0.5">{c.groupName}</span>
+                    )}
+                    {c.lastPurchaseAt && (
+                      <span>Ост. покупка: {fmt.date(c.lastPurchaseAt)}</span>
+                    )}
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden overflow-x-auto md:block">
             <table className="table table-sm">
               <thead>
                 <tr className="border-b border-base-200 text-xs text-base-content/40">
@@ -182,7 +236,7 @@ export function CustomersListPage() {
           </div>
 
           {q.data && q.data.total > pageSize && (
-            <div className="flex items-center justify-between px-5 py-4 border-t border-base-200">
+            <div className="flex flex-col items-center justify-between gap-2 border-t border-base-200 px-4 py-3 sm:flex-row sm:px-5 sm:py-4">
               <span className="text-xs text-base-content/40">
                 Сторінка {page} з {totalPages} · {q.data.total} записів
               </span>

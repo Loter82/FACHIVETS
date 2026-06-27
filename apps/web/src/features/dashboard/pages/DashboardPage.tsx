@@ -46,9 +46,9 @@ export function DashboardPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-base-content">
+          <h1 className="text-lg font-semibold text-base-content md:text-xl">
             Вітаємо, {user?.fullName ?? 'користувачу'}
           </h1>
           <p className="mt-0.5 text-sm text-base-content/50">
@@ -56,20 +56,22 @@ export function DashboardPage() {
           </p>
         </div>
         {/* Period tabs */}
-        <div className="flex rounded-xl bg-base-200 p-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                period === p.value
-                  ? 'bg-white text-base-content shadow-sm'
-                  : 'text-base-content/50 hover:text-base-content'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="-mx-4 px-4 md:mx-0 md:px-0">
+          <div className="flex w-max gap-0 rounded-xl bg-base-200 p-1 md:w-auto">
+            {PERIODS.map((p) => (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                  period === p.value
+                    ? 'bg-white text-base-content shadow-sm'
+                    : 'text-base-content/50 hover:text-base-content'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -113,7 +115,7 @@ export function DashboardPage() {
       {/* Chart + Top customers */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="card-elevated overflow-hidden lg:col-span-2">
-          <div className="flex items-center justify-between px-5 pt-5 pb-2">
+          <div className="flex items-center justify-between px-4 pt-4 pb-2 md:px-5 md:pt-5">
             <h2 className="text-sm font-semibold">Динаміка виторгу</h2>
             <span className="text-xs text-base-content/40">
               {timeline ? bucketLabel(timeline.bucket) : ''}
@@ -132,7 +134,7 @@ export function DashboardPage() {
           )}
         </div>
 
-        <div className="card-elevated px-5 py-5">
+        <div className="card-elevated px-4 py-4 md:px-5 md:py-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Топ клієнти</h2>
             <Link to="/customers" className="text-xs text-primary hover:underline">
@@ -175,10 +177,42 @@ export function DashboardPage() {
 
       {/* Top products */}
       <div className="card-elevated overflow-hidden">
-        <div className="px-5 pt-5 pb-2">
+        <div className="px-4 pt-4 pb-2 md:px-5 md:pt-5">
           <h2 className="text-sm font-semibold">Топ товари</h2>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile: card list */}
+        <div className="md:hidden">
+          {q.isLoading ? (
+            <div className="flex justify-center py-8">
+              <span className="loading loading-spinner text-primary" />
+            </div>
+          ) : topProducts.length === 0 ? (
+            <div className="py-8 text-center text-sm text-base-content/40">Немає даних</div>
+          ) : (
+            <ul className="divide-y divide-base-200">
+              {topProducts.map((p, i) => (
+                <li key={p.goodId} className="flex items-center gap-3 px-4 py-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-[10px] font-semibold text-base-content/60">
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{p.name ?? `Товар #${p.goodId}`}</div>
+                    <div className="truncate font-mono text-[10px] text-base-content/40">
+                      {p.code ?? '—'} · {fmt.num(p.qtty, 2)} шт.
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                    {fmt.money(p.revenue)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="table table-sm">
             <thead>
               <tr className="border-b border-base-200 text-xs text-base-content/50">
@@ -255,26 +289,26 @@ function KpiCard({
       type={clickable ? 'button' : undefined}
       onClick={onClick}
       title={hint}
-      className={`card-elevated p-5 text-left ${
+      className={`card-elevated p-4 text-left md:p-5 ${
         clickable
           ? 'cursor-pointer transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/40'
           : ''
       }`}
     >
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-medium text-base-content/50">{label}</span>
-        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-base-200">
+      <div className="mb-2 flex items-center justify-between md:mb-3">
+        <span className="text-[11px] font-medium text-base-content/50 md:text-xs">{label}</span>
+        <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-base-200 md:h-8 md:w-8">
           {icon}
         </span>
       </div>
       {loading ? (
-        <div className="skeleton h-7 w-28 rounded-lg" />
+        <div className="skeleton h-6 w-20 rounded-lg md:h-7 md:w-28" />
       ) : (
-        <div className="text-2xl font-bold tabular-nums tracking-tight">{value}</div>
+        <div className="text-lg font-bold tabular-nums tracking-tight md:text-2xl">{value}</div>
       )}
       {delta && !loading && (
         <div
-          className={`mt-1.5 flex items-center gap-1 text-xs font-medium ${
+          className={`mt-1.5 flex items-center gap-1 text-[11px] font-medium md:text-xs ${
             delta.positive ? 'text-emerald-600' : 'text-red-500'
           }`}
         >
@@ -283,7 +317,7 @@ function KpiCard({
           ) : (
             <TrendingDown size={12} strokeWidth={2} />
           )}
-          {Math.abs(delta.value).toFixed(1)}% vs попередній
+          {Math.abs(delta.value).toFixed(1)}% <span className="hidden sm:inline">vs попередній</span>
         </div>
       )}
     </Wrapper>
@@ -314,7 +348,7 @@ function SalesBreakdown({
   const wholesalePct = totalRev > 0 ? (wholesaleRev / totalRev) * 100 : 0;
 
   return (
-    <div className="card-elevated p-5">
+    <div className="card-elevated p-4 md:p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold">Структура продажів</h2>
         <span className="text-xs text-base-content/40">

@@ -48,14 +48,14 @@ export function SettingsSourcesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Джерела даних</h1>
+          <h1 className="text-lg font-bold md:text-2xl">Джерела даних</h1>
           <p className="text-sm text-base-content/70">
             Підключення до Unipro MS SQL Server для синхронізації продажів, товарів та клієнтів.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+        <button className="btn btn-primary btn-sm w-full sm:w-auto sm:btn-md" onClick={() => setShowForm(true)}>
           + Додати джерело
         </button>
       </div>
@@ -81,7 +81,7 @@ export function SettingsSourcesPage() {
       )}
 
       {sources.data && sources.data.length > 0 && (
-        <div className="overflow-x-auto rounded-box bg-base-100 shadow">
+        <div className="hidden overflow-x-auto rounded-box bg-base-100 shadow md:block">
           <table className="table">
             <thead>
               <tr>
@@ -99,6 +99,14 @@ export function SettingsSourcesPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {sources.data && sources.data.length > 0 && (
+        <div className="space-y-3 md:hidden">
+          {sources.data.map((s) => (
+            <SourceCard key={s.id} source={s} onChanged={onSaved} />
+          ))}
         </div>
       )}
 
@@ -190,6 +198,76 @@ function StatusBadge({ status }: { status: DataSourceDto['status'] }) {
   };
   const v = map[status];
   return <span className={`badge ${v.cls}`}>{v.label}</span>;
+}
+
+function SourceCard({ source, onChanged }: { source: DataSourceDto; onChanged: () => void }) {
+  const qc = useQueryClient();
+  const test = useMutation({
+    mutationFn: () => dataSourcesApi.testExisting(source.id),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['data-sources'] }),
+  });
+  const remove = useMutation({
+    mutationFn: () => dataSourcesApi.remove(source.id),
+    onSuccess: onChanged,
+  });
+
+  return (
+    <div className="card-elevated p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">{source.name}</div>
+          <div className="mt-0.5 text-xs text-base-content/60">
+            {source.type === 'UNIPRO_MSSQL' ? 'MS SQL' : 'JSON-агент'}
+          </div>
+        </div>
+        <StatusBadge status={source.status} />
+      </div>
+      {(source.summary.host || source.summary.database) && (
+        <div className="mt-2 text-xs text-base-content/60">
+          {source.summary.host && (
+            <div className="truncate">
+              {source.summary.host}
+              {source.summary.port ? `:${source.summary.port}` : ''}
+            </div>
+          )}
+          {source.summary.database && (
+            <div className="truncate text-base-content/40">{source.summary.database}</div>
+          )}
+        </div>
+      )}
+      {source.lastErrorMessage && (
+        <div className="mt-2 text-xs text-error">{source.lastErrorMessage}</div>
+      )}
+      {source.lastTestedAt && (
+        <div className="mt-1 text-[11px] text-base-content/40">
+          Тест: {new Date(source.lastTestedAt).toLocaleString('uk-UA')}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          className="btn btn-sm btn-outline rounded-xl"
+          disabled={test.isPending}
+          onClick={() => test.mutate()}
+        >
+          {test.isPending ? '...' : 'Тест'}
+        </button>
+        {source.type === 'UNIPRO_MSSQL' && source.status === 'ACTIVE' && (
+          <Link to={`/settings/sources/${source.id}/schema`} className="btn btn-sm btn-ghost rounded-xl">
+            Схема
+          </Link>
+        )}
+        <button
+          className="btn btn-sm btn-ghost rounded-xl text-error ml-auto"
+          disabled={remove.isPending}
+          onClick={() => {
+            if (window.confirm(`Видалити джерело «${source.name}»?`)) remove.mutate();
+          }}
+        >
+          Видалити
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function NewMssqlSourceForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () => void }) {

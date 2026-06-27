@@ -51,14 +51,14 @@ export function CustomerProfilePage() {
       </Link>
 
       {/* Profile header */}
-      <div className="card-elevated px-6 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-xl font-bold text-primary">
+      <div className="card-elevated px-4 py-4 md:px-6 md:py-5">
+        <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:justify-between">
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-lg font-bold text-primary md:h-12 md:w-12 md:text-xl">
               {c.displayName[0]?.toUpperCase() ?? '?'}
             </div>
-            <div>
-              <h1 className="text-xl font-semibold">{c.displayName}</h1>
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold md:text-xl">{c.displayName}</h1>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {c.cardNumber && (
                   <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
@@ -82,13 +82,13 @@ export function CustomerProfilePage() {
               </div>
             </div>
           </div>
-          <div className="text-right text-xs text-base-content/40">
+          <div className="text-xs text-base-content/40 md:text-right">
             Синхр.: {fmt.datetime(c.syncedAt)}
           </div>
         </div>
 
         {(c.phones.length > 0 || c.addresses.length > 0 || c.edrpou || c.inn) && (
-          <div className="mt-4 flex flex-wrap gap-6 border-t border-base-200 pt-4 text-sm">
+          <div className="mt-4 flex flex-col gap-3 border-t border-base-200 pt-4 text-sm md:flex-row md:flex-wrap md:gap-6">
             {c.phones.length > 0 && (
               <div className="flex items-start gap-2">
                 <Phone size={14} className="mt-0.5 shrink-0 text-base-content/30" />
@@ -135,12 +135,49 @@ export function CustomerProfilePage() {
 
       {/* Orders */}
       <div className="card-elevated overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4">
+        <div className="flex items-center justify-between px-4 py-3 md:px-5 md:py-4">
           <h2 className="text-sm font-semibold">Історія операцій</h2>
           <span className="text-xs text-base-content/40">Всього: {ordersQ.data?.total ?? '—'}</span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile: card list */}
+        <div className="md:hidden">
+          {ordersQ.isLoading && (
+            <div className="flex justify-center py-10">
+              <span className="loading loading-spinner text-primary" />
+            </div>
+          )}
+          {ordersQ.data && ordersQ.data.items.length === 0 && (
+            <div className="py-10 text-center text-sm text-base-content/40">
+              У цього клієнта немає документів
+            </div>
+          )}
+          <ul className="divide-y divide-base-200">
+            {ordersQ.data?.items.map((o) => (
+              <li key={o.id} className="flex flex-col gap-1 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs text-base-content/60">{fmt.datetime(o.dateTime)}</div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                      <span className="rounded-full bg-base-200 px-2 py-0.5 text-[11px]">{o.docTypeLabel}</span>
+                      <span className="font-mono text-[11px] text-base-content/50">№ {o.docNum ?? '—'}</span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-semibold tabular-nums">{fmt.money(o.docSum, 2)}</div>
+                    <div className="text-[10px] text-base-content/40">{o.itemsCount} поз.</div>
+                  </div>
+                </div>
+                {o.description && (
+                  <div className="truncate text-[11px] text-base-content/50">{o.description}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Desktop: table */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="table table-sm">
             <thead>
               <tr className="border-b border-base-200 text-xs text-base-content/40">
@@ -188,7 +225,7 @@ export function CustomerProfilePage() {
         </div>
 
         {ordersQ.data && ordersQ.data.total > pageSize && (
-          <div className="flex items-center justify-between border-t border-base-200 px-5 py-3">
+          <div className="flex flex-col items-center justify-between gap-2 border-t border-base-200 px-4 py-3 sm:flex-row sm:px-5">
             <span className="text-xs text-base-content/40">
               Сторінка {page} з {totalPages}
             </span>
@@ -218,10 +255,10 @@ export function CustomerProfilePage() {
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="card-elevated p-5">
-      <div className="mb-2 text-xs font-medium text-base-content/50">{label}</div>
-      <div className="text-2xl font-bold tabular-nums tracking-tight">{value}</div>
-      {hint && <div className="mt-1 text-xs text-base-content/40">{hint}</div>}
+    <div className="card-elevated p-4 md:p-5">
+      <div className="mb-1.5 text-[11px] font-medium text-base-content/50 md:mb-2 md:text-xs">{label}</div>
+      <div className="text-lg font-bold tabular-nums tracking-tight md:text-2xl">{value}</div>
+      {hint && <div className="mt-1 text-[11px] text-base-content/40 md:text-xs">{hint}</div>}
     </div>
   );
 }
