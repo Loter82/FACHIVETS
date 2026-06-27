@@ -25,7 +25,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : { message: 'Внутрішня помилка сервера' };
 
     if (status >= 500) {
-      this.logger.error(exception);
+      const req = ctx.getRequest<{ method?: string; url?: string }>();
+      const where = `${req?.method ?? '?'} ${req?.url ?? '?'}`;
+      if (exception instanceof Error) {
+        this.logger.error(`${where} → ${exception.name}: ${exception.message}`, exception.stack);
+      } else {
+        this.logger.error(`${where} → non-Error thrown: ${JSON.stringify(exception)}`);
+      }
     }
 
     const body =
