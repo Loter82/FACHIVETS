@@ -13,11 +13,12 @@ import {
   LogOut,
   Menu,
   ChevronDown,
+  type LucideIcon,
 } from 'lucide-react';
 import { authApi } from '@/features/auth/api';
 import { useAuthStore } from '@/app/auth-store';
 
-const NAV: Array<{ to: string; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }> }> = [
+const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: '/', label: 'Дашборд', icon: LayoutDashboard },
   { to: '/customers', label: 'Клієнти', icon: Users },
   { to: '/segments', label: 'Сегменти', icon: PieChart },
@@ -87,7 +88,7 @@ export function AppLayout() {
         <div className="border-t border-white/10 px-3 py-3">
           <div className="flex items-center gap-3 rounded-xl px-3 py-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
-              {(user?.fullName ?? 'U')[0].toUpperCase()}
+              {((user?.fullName ?? 'U')[0] ?? 'U').toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-medium text-white">

@@ -407,8 +407,10 @@ function RevenueChart({
   }));
 
   const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const areaPath = pts.length > 0
-    ? `${linePath} L ${pts[pts.length - 1].x} ${pad.top + innerH} L ${pts[0].x} ${pad.top + innerH} Z`
+  const last = pts[pts.length - 1];
+  const first = pts[0];
+  const areaPath = last && first
+    ? `${linePath} L ${last.x} ${pad.top + innerH} L ${first.x} ${pad.top + innerH} Z`
     : '';
 
   const labelFormat = (iso: string) => {
