@@ -87,11 +87,12 @@ export class AuthController {
 
   private cookieOptions() {
     const secure = this.config.get('COOKIE_SECURE', { infer: true });
+    const sameSite = this.config.get('COOKIE_SAMESITE', { infer: true });
     const domain = this.config.get('COOKIE_DOMAIN', { infer: true });
     return {
       httpOnly: true,
-      secure,
-      sameSite: 'lax' as const,
+      secure: sameSite === 'none' ? true : secure,
+      sameSite,
       path: '/',
       ...(domain ? { domain } : {}),
     };
