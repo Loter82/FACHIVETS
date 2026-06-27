@@ -2,10 +2,10 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "pnpm install --no-frozen-lockfile --prod=false && pnpm --filter @unipro-crm/api exec prisma generate && pnpm --filter @unipro-crm/api... run build"
+    "buildCommand": "pnpm install --no-frozen-lockfile --prod=false && pnpm --filter @unipro-crm/api run prisma:generate && pnpm --filter @unipro-crm/api... run build"
   },
   "deploy": {
-    "startCommand": "pnpm --filter @unipro-crm/api exec prisma migrate deploy && pnpm --filter @unipro-crm/api run start:prod",
+    "startCommand": "pnpm --filter @unipro-crm/api run prisma:migrate:deploy && pnpm --filter @unipro-crm/api run start:prod",
     "healthcheckPath": "/api/v1/health/live",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
