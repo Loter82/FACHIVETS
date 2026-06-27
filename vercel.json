@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm --filter @unipro-crm/web... run build",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [
+    { "source": "/((?!assets/|favicon\\.ico|robots\\.txt).*)", "destination": "/index.html" }
+  ]
+}
