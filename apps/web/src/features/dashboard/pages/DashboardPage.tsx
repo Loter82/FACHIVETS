@@ -14,6 +14,7 @@ import {
 import type { DashboardKpiDto, DashboardPeriod } from '@unipro-crm/shared-types';
 import { dashboardApi } from '../api';
 import { CustomersBreakdownModal } from '../components/CustomersBreakdownModal';
+import { RevenueChart } from '../components/RevenueChart';
 import { fmt } from '@/shared/lib/format';
 import { useAuthStore } from '@/app/auth-store';
 
@@ -289,8 +290,14 @@ function KpiCard({
   );
 }
 
-function bucketLabel(b: 'day' | 'week' | 'month'): string {
-  return b === 'day' ? 'по днях' : b === 'week' ? 'по тижнях' : 'по місяцях';
+function bucketLabel(b: 'hour' | 'day' | 'week' | 'month'): string {
+  return b === 'hour'
+    ? 'по годинах'
+    : b === 'day'
+      ? 'по днях'
+      : b === 'week'
+        ? 'по тижнях'
+        : 'по місяцях';
 }
 
 function SalesBreakdown({
@@ -408,67 +415,5 @@ function ChannelRow({
         )}
       </div>
     </div>
-  );
-}
-
-function RevenueChart({
-  points,
-  bucket,
-}: {
-  points: Array<{ date: string; revenue: number; ordersCount: number }>;
-  bucket: 'day' | 'week' | 'month';
-}) {
-  const max = Math.max(...points.map((p) => p.revenue), 1);
-  const width = 800;
-  const height = 220;
-  const pad = { top: 12, right: 16, bottom: 28, left: 16 };
-  const innerW = width - pad.left - pad.right;
-  const innerH = height - pad.top - pad.bottom;
-  const step = points.length > 1 ? innerW / (points.length - 1) : 0;
-
-  const pts = points.map((p, i) => ({
-    x: pad.left + i * step,
-    y: pad.top + innerH - (p.revenue / max) * innerH,
-    ...p,
-  }));
-
-  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const last = pts[pts.length - 1];
-  const first = pts[0];
-  const areaPath = last && first
-    ? `${linePath} L ${last.x} ${pad.top + innerH} L ${first.x} ${pad.top + innerH} Z`
-    : '';
-
-  const labelFormat = (iso: string) => {
-    const d = new Date(iso);
-    if (bucket === 'month') return `${(d.getUTCMonth() + 1).toString().padStart(2, '0')}.${d.getUTCFullYear().toString().slice(2)}`;
-    return `${d.getUTCDate().toString().padStart(2, '0')}.${(d.getUTCMonth() + 1).toString().padStart(2, '0')}`;
-  };
-
-  const labelEvery = Math.max(1, Math.ceil(pts.length / 8));
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-52 w-full" style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill="url(#chartGrad)" />
-      <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-      {pts.map((p, i) => (
-        <g key={i}>
-          {i % labelEvery === 0 && (
-            <text x={p.x} y={height - 6} fontSize={9} textAnchor="middle" fill="currentColor" opacity={0.4}>
-              {labelFormat(p.date)}
-            </text>
-          )}
-          <circle cx={p.x} cy={p.y} r={0} fill="#3b82f6">
-            <title>{labelFormat(p.date)} · {fmt.money(p.revenue)} · {p.ordersCount} прод.</title>
-          </circle>
-        </g>
-      ))}
-    </svg>
   );
 }

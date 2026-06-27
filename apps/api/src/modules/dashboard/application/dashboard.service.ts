@@ -27,7 +27,7 @@ interface PeriodRange {
   to: Date;
   prevFrom: Date | null;
   prevTo: Date | null;
-  bucket: 'day' | 'week' | 'month';
+  bucket: 'hour' | 'day' | 'week' | 'month';
 }
 
 interface KpiRow {
@@ -200,7 +200,14 @@ export class DashboardService {
   ): Promise<RevenueTimelineResponse> {
     const r = range ?? this.resolveRange(period);
     const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
-    const truncUnit = r.bucket === 'day' ? 'day' : r.bucket === 'week' ? 'week' : 'month';
+    const truncUnit =
+      r.bucket === 'hour'
+        ? 'hour'
+        : r.bucket === 'day'
+          ? 'day'
+          : r.bucket === 'week'
+            ? 'week'
+            : 'month';
 
     const from = r.from ?? new Date(Date.UTC(2000, 0, 1));
     const to = r.to;
@@ -227,13 +234,48 @@ export class DashboardService {
       ordersCount: Number(row.orders_count ?? 0),
     }));
 
+    const filled = this.fillTimelineGaps(points, from, to, r.bucket);
+
     return {
       period,
       from: from.toISOString(),
       to: to.toISOString(),
       bucket: r.bucket,
-      points,
+      points: filled,
     };
+  }
+
+  private fillTimelineGaps(
+    points: RevenueTimelinePoint[],
+    from: Date,
+    to: Date,
+    bucket: 'hour' | 'day' | 'week' | 'month',
+  ): RevenueTimelinePoint[] {
+    // Only auto-fill for bounded buckets where a continuous timeline matters.
+    if (bucket === 'week' || bucket === 'month') return points;
+    if (!from || !to || from >= to) return points;
+
+    const stepMs = bucket === 'hour' ? 3_600_000 : 86_400_000;
+    const map = new Map(points.map((p) => [new Date(p.date).getTime(), p]));
+
+    // Align to bucket boundary (UTC truncate)
+    const start = new Date(from);
+    if (bucket === 'hour') {
+      start.setUTCMinutes(0, 0, 0);
+    } else {
+      start.setUTCHours(0, 0, 0, 0);
+    }
+
+    const out: RevenueTimelinePoint[] = [];
+    for (let t = start.getTime(); t < to.getTime(); t += stepMs) {
+      const existing = map.get(t);
+      if (existing) {
+        out.push(existing);
+      } else {
+        out.push({ date: new Date(t).toISOString(), revenue: 0, ordersCount: 0 });
+      }
+    }
+    return out;
   }
 
   async topCustomers(
@@ -530,7 +572,7 @@ export class DashboardService {
     let from: Date;
     let prevFrom: Date | null = null;
     let prevTo: Date | null = null;
-    let bucket: 'day' | 'week' | 'month' = 'day';
+    let bucket: 'hour' | 'day' | 'week' | 'month' = 'day';
     const startOfDay = (d: Date) =>
       new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
@@ -540,7 +582,7 @@ export class DashboardService {
         const oneDay = 86_400_000;
         prevFrom = new Date(from.getTime() - oneDay);
         prevTo = from;
-        bucket = 'day';
+        bucket = 'hour';
         break;
       }
       case 'week': {

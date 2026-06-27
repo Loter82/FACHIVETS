@@ -32,7 +32,7 @@ export interface RevenueTimelineResponse {
   period: DashboardPeriod;
   from: string;
   to: string;
-  bucket: 'day' | 'week' | 'month';
+  bucket: 'hour' | 'day' | 'week' | 'month';
   points: RevenueTimelinePoint[];
 }
 
