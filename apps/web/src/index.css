@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* Inter Variable from Google Fonts CDN */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * {
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Smooth transitions for interactive elements */
+  button, a {
+    @apply transition-all duration-150;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-base-300;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-base-content/20;
+  }
+}
+
+@layer utilities {
+  .card-elevated {
+    @apply rounded-2xl bg-white shadow-sm ring-1 ring-black/5;
+  }
+  .stat-value {
+    @apply text-2xl font-bold tabular-nums tracking-tight;
+  }
+}

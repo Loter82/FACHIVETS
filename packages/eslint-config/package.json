@@ -1,0 +1,10 @@
+{
+  "name": "@unipro-crm/eslint-config",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.cjs",
+  "files": ["index.cjs", "react.cjs"],
+  "peerDependencies": {
+    "eslint": "^9.0.0"
+  }
+}

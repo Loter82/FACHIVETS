@@ -1,0 +1,521 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =============================================================================
+// Tenancy & Auth
+// =============================================================================
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MANAGER
+  MARKETER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum TenantPlan {
+  TRIAL
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  plan      TenantPlan   @default(TRIAL)
+  status    TenantStatus @default(ACTIVE)
+  settings  Json         @default("{}")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users       User[]
+  dataSources DataSource[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  fullName     String
+  role         UserRole   @default(MANAGER)
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// =============================================================================
+// Sync — джерела даних та журнал синхронізації
+// =============================================================================
+
+enum DataSourceType {
+  UNIPRO_MSSQL
+  UNIPRO_JSON_AGENT
+}
+
+enum DataSourceStatus {
+  DRAFT // створено, ще не перевірено
+  ACTIVE // тест-конекшн ОК, синхронізація дозволена
+  ERROR // остання спроба не вдалася
+  DISABLED // адмін вимкнув
+}
+
+enum SyncJobType {
+  TEST_CONNECTION
+  FULL_SYNC
+  INCREMENTAL_SYNC
+  ENTITY_SYNC
+}
+
+enum SyncJobStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+/// Логічна сутність синхронізації — для журналу та статусу.
+enum SyncEntity {
+  ENTITIES
+  STORES
+  USERS
+  PARTNER_GROUPS
+  PARTNERS
+  GOODS_GROUPS
+  GOODS
+  DOCUMENTS
+  DOCUMENT_ITEMS
+  PAYMENTS
+}
+
+/// Конфігурація під'єднання до зовнішньої БД (Unipro MSSQL або JSON-агент).
+/// credentialsCipher — AES-256-GCM зашифрований JSON з {host,port,user,password,database,encrypt,trustServerCertificate,instance,...}
+/// або {agentUrl, agentToken} для JSON-агента. Розшифровується лише в пам'яті процесу через ENCRYPTION_KEY.
+model DataSource {
+  id                String           @id @default(cuid())
+  tenantId          String
+  name              String
+  type              DataSourceType
+  status            DataSourceStatus @default(DRAFT)
+  /// Шифрований JSON з кредами. Формат: base64(iv || authTag || ciphertext)
+  credentialsCipher String
+  /// Публічні (нешифровані) налаштування: розклад, які сутності синхронізувати, обмеження тощо.
+  settings          Json             @default("{}")
+  lastTestedAt      DateTime?
+  lastSuccessAt     DateTime?
+  lastErrorAt       DateTime?
+  lastErrorMessage  String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  syncJobs SyncJob[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("data_sources")
+}
+
+/// Журнал виконання синхронізацій. Один запис = одне завдання (test/full/incremental/entity).
+model SyncJob {
+  id             String        @id @default(cuid())
+  tenantId       String
+  dataSourceId   String
+  type           SyncJobType
+  status         SyncJobStatus @default(QUEUED)
+  /// Назва сутності для ENTITY_SYNC (наприклад "products", "sales"). Null для інших типів.
+  entity         String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  /// Кількість прочитаних записів з джерела
+  recordsRead    Int           @default(0)
+  /// Кількість вставлених/оновлених записів у нашій БД
+  recordsWritten Int           @default(0)
+  errorMessage   String?
+  /// Додаткові метадані: чекпоінти, watermark, контекст.
+  meta           Json          @default("{}")
+  createdAt      DateTime      @default(now())
+
+  dataSource DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dataSourceId, createdAt])
+  @@index([status])
+  @@map("sync_jobs")
+}
+
+// =============================================================================
+// Mirror — дзеркала даних Unipro в нашій Postgres
+// Кожна mirror-таблиця:
+//  • prefix raw_ для службових полів, скопійованих 1:1 з MSSQL
+//  • externalId (Unipro fId) — цілий локальний ID у Unipro
+//  • extGuid1/extGuid2 — пара bigint, що утворює 16-байтовий GUID Unipro
+//  • (tenantId, dataSourceId, externalId) — унікальний композит
+//  • syncedAt — час останньої успішної синхронізації запису
+//  • payload Json — повний raw-рядок з MSSQL для traceability/відлагодження
+// FK між mirror-моделями не створюємо: зв'язки тримаємо через externalId.
+// =============================================================================
+
+/// Останній стан синхронізації по сутності — для UI /sync.
+model SyncCursor {
+  id            String     @id @default(cuid())
+  tenantId      String
+  dataSourceId  String
+  entity        SyncEntity
+  /// Hex-string з MSSQL rowversion (uniDocuments.fRV) — для incremental.
+  watermarkHex  String?
+  /// Максимальний extId, синхронізований востаннє (fallback для довідників).
+  watermarkInt  BigInt?
+  recordsTotal  Int        @default(0)
+  lastRunAt     DateTime?
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  lastError     String?
+  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime   @default(now())
+
+  @@unique([tenantId, dataSourceId, entity])
+  @@index([tenantId, dataSourceId])
+  @@map("sync_cursors")
+}
+
+model MirrorEntity {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   Int
+  extGuid1     BigInt
+  extGuid2     BigInt
+  code         String?
+  name         String?
+  namePrint    String?
+  edrpou       String?
+  inn          String?
+  ndsn         String?
+  tel          String?
+  address      String?
+  state        Int?
+  groupId      Int?
+  payload      Json
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId])
+  @@map("mirror_entities")
+}
+
+model MirrorStore {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   Int
+  extGuid1     BigInt
+  extGuid2     BigInt
+  code         String?
+  name         String?
+  namePrint    String?
+  address      String?
+  state        Int?
+  groupId      Int?
+  priceId      Int?
+  priceId2     Int?
+  payload      Json
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId])
+  @@map("mirror_stores")
+}
+
+/// Дзеркало uniUsers. Паролі (fPassword/fPassword2) НЕ копіюються.
+model MirrorUser {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   Int
+  extGuid1     BigInt
+  extGuid2     BigInt
+  code         String?
+  name         String?
+  namePrint    String?
+  cardNumber   String?
+  state        Int?
+  groupId      Int?
+  payload      Json
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId])
+  @@map("mirror_users")
+}
+
+/// Групи партнерів (nested set: cl/cr/clev).
+model MirrorPartnerGroup {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   Int
+  extGuid1     BigInt
+  extGuid2     BigInt
+  name         String?
+  cl           Int?
+  cr           Int?
+  clev         Int?
+  payload      Json
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId])
+  @@map("mirror_partner_groups")
+}
+
+model MirrorPartner {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   Int
+  extGuid1     BigInt
+  extGuid2     BigInt
+  code         String?
+  name         String?
+  namePrint    String?
+  cardNumber   String?
+  /// Список телефонів (fTel, fTel1..fTel5) у вигляді JSON-масиву ненульових рядків.
+  phones       Json     @default("[]")
+  /// Адреси (fAdress, fAdress1, fAdress2) як JSON-масив.
+  addresses    Json     @default("[]")
+  /// Дати (fDate..fDate5) як JSON-масив ISO-стрінгів.
+  dates        Json     @default("[]")
+  edrpou       String?
+  inn          String?
+  description  String?
+  state        Int?
+  groupId      Int?
+  /// Запропонована назва для CRM-сутності клієнта (=fName fallback fNamePrint fallback fCode).
+  displayName  String?
+  payload      Json
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId])
+  @@index([tenantId, dataSourceId, groupId])
+  @@index([tenantId, dataSourceId, cardNumber])
+  @@map("mirror_partners")
+}
+
+model MirrorGoodsGroup {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   Int
+  extGuid1     BigInt
+  extGuid2     BigInt
+  name         String?
+  cl           Int?
+  cr           Int?
+  clev         Int?
+  markUp       Float?
+  payload      Json
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId])
+  @@map("mirror_goods_groups")
+}
+
+model MirrorGood {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   Int
+  extGuid1     BigInt
+  extGuid2     BigInt
+  code         String?
+  name         String?
+  nameFull     String?
+  description  String?
+  /// Усі штрихкоди (fBarCode/fBarCode2/fBarCode3 + fBarCodeList split by ;).
+  barcodes     Json     @default("[]")
+  unitType     String?
+  unitType2    String?
+  unitType3    String?
+  coeff2       Float?
+  coeff3       Float?
+  type         Int?
+  vatGroup     Int?
+  visible      Int?
+  deleted      Int?
+  groupId      Int?
+  priceIn      Float?
+  /// Основна продажна (fPriceOut1).
+  priceOut     Float?
+  /// Усі додаткові ціни (fPriceOut2..fPriceOut10) як JSON-масив [{ level, price }].
+  pricesExtra  Json     @default("[]")
+  minCount     Float?
+  nomCount     Float?
+  mainPartner  Int?
+  /// Додаткові поля fpdop1..fpdop4 як JSON.
+  customFields Json     @default("[]")
+  payload      Json
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId])
+  @@index([tenantId, dataSourceId, groupId])
+  @@index([tenantId, dataSourceId, code])
+  @@map("mirror_goods")
+}
+
+/// Дзеркало uniDocuments. externalId = fId (bigint).
+model MirrorDocument {
+  id            String    @id @default(cuid())
+  tenantId      String
+  dataSourceId  String
+  externalId    BigInt
+  extGuid1      BigInt
+  extGuid2      BigInt
+  docNum        BigInt?
+  docType       Int
+  state         Int
+  dateTime      DateTime
+  realDateTime  DateTime?
+  inputNum      String?
+  inputDate     DateTime?
+  /// Сума документа (fDocSum).
+  docSum        Float?
+  currId        Int?
+  currRate      Float?
+  /// Зовнішні lid-зв'язки на інші довідники Unipro (зберігаємо як int — НЕ FK).
+  entityId      Int?
+  partnerId     Int?
+  storeId       Int?
+  storeId2      Int?
+  userId        Int?
+  realUserId    Int?
+  salePId       Int?
+  contractId    Int?
+  cashAccountId Int?
+  payCardId     Int?
+  /// Зв'язок продаж↔повернення (fTreeId varchar).
+  treeId        String?
+  description   String?
+  itemCost      Int?
+  transactId    BigInt?
+  pr            Int?
+  isPaid        Int?
+  tableId       Int?
+  /// РРО-поля.
+  prroDate      Int?
+  prroFn        String?
+  prroRealDate  DateTime?
+  /// Watermark з MSSQL rowversion (uniDocuments.fRV) — як hex-string.
+  rvHex         String
+  /// Кількість позицій у документі (uniDocGoods).
+  itemsCount    Int       @default(0)
+  payload       Json
+  syncedAt      DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId, docType, dateTime])
+  @@index([tenantId, dataSourceId, partnerId])
+  @@index([tenantId, dataSourceId, storeId])
+  @@index([tenantId, dataSourceId, rvHex])
+  @@index([tenantId, dataSourceId, treeId])
+  @@map("mirror_documents")
+}
+
+/// Дзеркало uniDocGoods.
+model MirrorDocumentItem {
+  id             String   @id @default(cuid())
+  tenantId       String
+  dataSourceId   String
+  externalId     BigInt
+  /// Посилання на документ (uniDocGoods.fDocId → uniDocuments.fId).
+  externalDocId  BigInt
+  /// uniDocGoods.fGoodId (bigint!).
+  externalGoodId BigInt
+  qtty           Float
+  priceIn        Float
+  priceOut       Float
+  discount       Float
+  sum            Float
+  vatSum         Float
+  currId         Int?
+  unitType       Int?
+  typeInDoc      Int?
+  parentGoodId   Int?
+  posId          Int?
+  mark           Int?
+  couponCode     String?
+  exStamp        String?
+  description    String?
+  payload        Json
+  syncedAt       DateTime @default(now())
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId, externalDocId])
+  @@index([tenantId, dataSourceId, externalGoodId])
+  @@map("mirror_document_items")
+}

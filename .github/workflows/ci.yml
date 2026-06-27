@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: unipro
+          POSTGRES_PASSWORD: unipro
+          POSTGRES_DB: unipro_crm_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U unipro -d unipro_crm_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://unipro:unipro@localhost:5432/unipro_crm_test?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-please-change
+      JWT_REFRESH_SECRET: ci-refresh-secret-please-change
+      ENCRYPTION_KEY: ci-encryption-key
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Prisma generate
+        working-directory: apps/api
+        run: pnpm prisma generate
+
+      - name: Typecheck
+        run: pnpm -r run typecheck
+
+      - name: Lint
+        run: pnpm -r run lint
+
+      - name: Build
+        run: pnpm -r run build
+
+      - name: Test
+        run: pnpm -r run test

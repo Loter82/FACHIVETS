@@ -1,0 +1,12 @@
+{
+  "auth": {
+    "invalid_credentials": "Невірний email або пароль",
+    "session_expired": "Сесія закінчилася, увійдіть знову",
+    "forbidden": "Доступ заборонено"
+  },
+  "common": {
+    "not_found": "Не знайдено",
+    "validation_failed": "Помилка валідації",
+    "server_error": "Внутрішня помилка сервера"
+  }
+}

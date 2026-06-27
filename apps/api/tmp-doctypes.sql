@@ -1,0 +1,1 @@
+﻿SELECT "docType", COUNT(*) as cnt, SUM("docSum")::numeric(18,2) as total_sum, COUNT(DISTINCT "partnerId") as partners, MIN("dateTime")::date as min_date, MAX("dateTime")::date as max_date FROM mirror_documents WHERE state = 0 GROUP BY "docType" ORDER BY cnt DESC;
