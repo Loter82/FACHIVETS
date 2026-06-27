@@ -1,4 +1,4 @@
-# Unipro CRM — Архітектурна специфікація
+# Фахівець CRM — Архітектурна специфікація
 
 > Версія: 0.1 (draft, очікує погодження)
 > Мова інтерфейсу: українська
@@ -786,7 +786,7 @@ flowchart LR
     UDB[(Unipro MSSQL)]
     AGENT[Unipro Agent (опц.)]
   end
-  subgraph Cloud[Unipro CRM Cloud]
+  subgraph Cloud[Фахівець CRM Cloud]
     API[NestJS API]
     Q[(Redis / BullMQ)]
     W[Sync Workers]

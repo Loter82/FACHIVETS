@@ -50,10 +50,10 @@ export function AppLayout() {
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary">
-            <span className="text-sm font-bold text-white">U</span>
+            <span className="text-sm font-bold text-white">Ф</span>
           </div>
           <div>
-            <div className="text-sm font-semibold text-white">Unipro CRM</div>
+            <div className="text-sm font-semibold text-white">Фахівець CRM</div>
             <div className="text-[10px] uppercase tracking-widest text-white/40">
               Будматеріали
             </div>
@@ -116,10 +116,10 @@ export function AppLayout() {
           <aside className="flex h-full w-60 flex-col bg-neutral">
             <div className="flex items-center gap-3 px-5 py-5">
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary">
-                <span className="text-sm font-bold text-white">U</span>
+                <span className="text-sm font-bold text-white">Ф</span>
               </div>
               <div>
-                <div className="text-sm font-semibold text-white">Unipro CRM</div>
+                <div className="text-sm font-semibold text-white">Фахівець CRM</div>
                 <div className="text-[10px] uppercase tracking-widest text-white/40">
                   Будматеріали
                 </div>
@@ -158,7 +158,7 @@ export function AppLayout() {
           <label htmlFor="app-drawer" className="btn btn-ghost btn-sm btn-square">
             <Menu size={18} />
           </label>
-          <span className="text-sm font-semibold">Unipro CRM</span>
+          <span className="text-sm font-semibold">Фахівець CRM</span>
           <div className="ml-auto flex items-center gap-2">
             <div className="dropdown dropdown-end">
               <button tabIndex={0} className="btn btn-ghost btn-sm gap-1 text-xs">

@@ -2,7 +2,7 @@
   "name": "@unipro-crm/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Unipro CRM API (NestJS)",
+  "description": "Фахівець CRM API (NestJS)",
   "scripts": {
     "dev": "nest start --watch",
     "build": "npx -y @nestjs/cli@10.4.5 build",
