@@ -16,11 +16,11 @@ import type {
 import { PrismaService } from '@/prisma/prisma.module';
 import { DataSourceResolverService } from '../../shared/data-source-resolver.service';
 import {
-  RETAIL_DOC_TYPE,
-  RETURN_DOC_TYPES,
-  SALE_DOC_TYPES,
-  WHOLESALE_DOC_TYPE,
-} from '../../shared/unipro/doc-types';
+  retailPredicateSql,
+  returnDocPredicateSql,
+  saleDocPredicateSql,
+  wholesalePredicateSql,
+} from '../../shared/unipro/doc-sql';
 
 interface PeriodRange {
   from: Date;
@@ -94,8 +94,10 @@ export class DashboardService {
     range?: PeriodRange,
   ): Promise<DashboardKpiDto> {
     const r = range ?? this.resolveRange(period);
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
-    const returnTypes = Prisma.join(RETURN_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('d');
+    const isReturn = returnDocPredicateSql('d');
+    const isRetail = retailPredicateSql('d');
+    const isWholesale = wholesalePredicateSql('d');
 
     const dateFilter = r.from
       ? Prisma.sql`AND d."dateTime" >= ${r.from} AND d."dateTime" < ${r.to}`
@@ -104,19 +106,18 @@ export class DashboardService {
     const [rows, itemsRows] = await Promise.all([
       this.prisma.$queryRaw<KpiRow[]>(Prisma.sql`
         SELECT
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${saleTypes})), 0) AS revenue,
-          COUNT(*) FILTER (WHERE d."docType" IN (${saleTypes})) AS orders_count,
-          COUNT(DISTINCT d."partnerId") FILTER (WHERE d."docType" IN (${saleTypes}) AND d."partnerId" IS NOT NULL AND d."partnerId" > 0) AS unique_customers,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS revenue,
+          COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
+          COUNT(DISTINCT d."partnerId") FILTER (WHERE ${isSale} AND d."partnerId" IS NOT NULL AND d."partnerId" > 0) AS unique_customers,
           0::numeric AS items_sold,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${returnTypes})), 0) AS returns_sum,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" = ${RETAIL_DOC_TYPE}), 0) AS retail_revenue,
-          COUNT(*) FILTER (WHERE d."docType" = ${RETAIL_DOC_TYPE}) AS retail_orders,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" = ${WHOLESALE_DOC_TYPE}), 0) AS wholesale_revenue,
-          COUNT(*) FILTER (WHERE d."docType" = ${WHOLESALE_DOC_TYPE}) AS wholesale_orders
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isRetail}), 0) AS retail_revenue,
+          COUNT(*) FILTER (WHERE ${isRetail}) AS retail_orders,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isWholesale}), 0) AS wholesale_revenue,
+          COUNT(*) FILTER (WHERE ${isWholesale}) AS wholesale_orders
         FROM mirror_documents d
         WHERE d."tenantId" = ${tenantId}
           AND d."dataSourceId" = ${dataSourceId}
-          AND d.state = 0
           ${dateFilter}
       `),
       this.prisma.$queryRaw<{ items_sold: number | string | null }[]>(Prisma.sql`
@@ -128,8 +129,7 @@ export class DashboardService {
           AND d."externalId" = i."externalDocId"
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
-          AND d.state = 0
-          AND d."docType" IN (${saleTypes})
+          AND ${isSale}
           ${r.from ? Prisma.sql`AND d."dateTime" >= ${r.from} AND d."dateTime" < ${r.to}` : Prisma.empty}
       `),
     ]);
@@ -140,11 +140,11 @@ export class DashboardService {
     if (r.prevFrom && r.prevTo) {
       const prevRows = await this.prisma.$queryRaw<KpiRow[]>(Prisma.sql`
         SELECT
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${saleTypes})), 0) AS revenue,
-          COUNT(*) FILTER (WHERE d."docType" IN (${saleTypes})) AS orders_count,
-          COUNT(DISTINCT d."partnerId") FILTER (WHERE d."docType" IN (${saleTypes}) AND d."partnerId" IS NOT NULL AND d."partnerId" > 0) AS unique_customers,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS revenue,
+          COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
+          COUNT(DISTINCT d."partnerId") FILTER (WHERE ${isSale} AND d."partnerId" IS NOT NULL AND d."partnerId" > 0) AS unique_customers,
           0::numeric AS items_sold,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${returnTypes})), 0) AS returns_sum,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
           0::numeric AS retail_revenue,
           0::bigint  AS retail_orders,
           0::numeric AS wholesale_revenue,
@@ -152,7 +152,6 @@ export class DashboardService {
         FROM mirror_documents d
         WHERE d."tenantId" = ${tenantId}
           AND d."dataSourceId" = ${dataSourceId}
-          AND d.state = 0
           AND d."dateTime" >= ${r.prevFrom}
           AND d."dateTime" < ${r.prevTo}
       `);
@@ -199,7 +198,7 @@ export class DashboardService {
     range?: PeriodRange,
   ): Promise<RevenueTimelineResponse> {
     const r = range ?? this.resolveRange(period);
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('d');
     const truncUnit =
       r.bucket === 'hour'
         ? 'hour'
@@ -220,8 +219,7 @@ export class DashboardService {
       FROM mirror_documents d
       WHERE d."tenantId" = ${tenantId}
         AND d."dataSourceId" = ${dataSourceId}
-        AND d.state = 0
-        AND d."docType" IN (${saleTypes})
+        AND ${isSale}
         AND d."dateTime" >= ${from}
         AND d."dateTime" < ${to}
       GROUP BY 1
@@ -284,7 +282,7 @@ export class DashboardService {
     range: PeriodRange,
     limit = 10,
   ): Promise<TopCustomerDto[]> {
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('d');
     const dateFilter = range.from
       ? Prisma.sql`AND d."dateTime" >= ${range.from} AND d."dateTime" < ${range.to}`
       : Prisma.empty;
@@ -303,8 +301,7 @@ export class DashboardService {
         AND p."externalId" = d."partnerId"
       WHERE d."tenantId" = ${tenantId}
         AND d."dataSourceId" = ${dataSourceId}
-        AND d.state = 0
-        AND d."docType" IN (${saleTypes})
+        AND ${isSale}
         AND d."partnerId" IS NOT NULL
         AND d."partnerId" > 0
         ${dateFilter}
@@ -328,7 +325,7 @@ export class DashboardService {
     range: PeriodRange,
     limit = 10,
   ): Promise<TopProductDto[]> {
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('d');
     const dateFilter = range.from
       ? Prisma.sql`AND d."dateTime" >= ${range.from} AND d."dateTime" < ${range.to}`
       : Prisma.empty;
@@ -351,8 +348,7 @@ export class DashboardService {
         AND g."externalId"::bigint = i."externalGoodId"
       WHERE i."tenantId" = ${tenantId}
         AND i."dataSourceId" = ${dataSourceId}
-        AND d.state = 0
-        AND d."docType" IN (${saleTypes})
+        AND ${isSale}
         ${dateFilter}
       GROUP BY i."externalGoodId", g.name, g.code
       ORDER BY revenue DESC
@@ -381,8 +377,8 @@ export class DashboardService {
     const safePageSize = Math.min(200, Math.max(1, pageSize));
     const offset = (safePage - 1) * safePageSize;
 
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
-    const returnTypes = Prisma.join(RETURN_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('d');
+    const isReturn = returnDocPredicateSql('d');
     const dateFilter = range.from
       ? Prisma.sql`AND d."dateTime" >= ${range.from} AND d."dateTime" < ${range.to}`
       : Prisma.empty;
@@ -408,10 +404,10 @@ export class DashboardService {
           p.id AS customer_id,
           p."displayName" AS display_name,
           p."cardNumber" AS card_number,
-          COUNT(*) FILTER (WHERE d."docType" IN (${saleTypes})) AS orders_count,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${saleTypes})), 0) AS revenue,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${returnTypes})), 0) AS returns_sum,
-          MAX(d."dateTime") FILTER (WHERE d."docType" IN (${saleTypes})) AS last_purchase_at
+          COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS revenue,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+          MAX(d."dateTime") FILTER (WHERE ${isSale}) AS last_purchase_at
         FROM mirror_documents d
         LEFT JOIN mirror_partners p
           ON p."tenantId" = d."tenantId"
@@ -419,12 +415,11 @@ export class DashboardService {
           AND p."externalId" = d."partnerId"
         WHERE d."tenantId" = ${tenantId}
           AND d."dataSourceId" = ${dataSourceId}
-          AND d.state = 0
           AND d."partnerId" IS NOT NULL
           AND d."partnerId" > 0
           ${dateFilter}
         GROUP BY d."partnerId", p.id, p."displayName", p."cardNumber"
-        HAVING COUNT(*) FILTER (WHERE d."docType" IN (${saleTypes})) > 0
+        HAVING COUNT(*) FILTER (WHERE ${isSale}) > 0
         ORDER BY revenue DESC
         LIMIT ${safePageSize} OFFSET ${offset}
       `),
@@ -434,10 +429,9 @@ export class DashboardService {
           FROM mirror_documents d
           WHERE d."tenantId" = ${tenantId}
             AND d."dataSourceId" = ${dataSourceId}
-            AND d.state = 0
             AND d."partnerId" IS NOT NULL
             AND d."partnerId" > 0
-            AND d."docType" IN (${saleTypes})
+            AND ${isSale}
             ${dateFilter}
           GROUP BY d."partnerId"
         ) t
@@ -482,7 +476,7 @@ export class DashboardService {
     const range = this.resolveRange(period);
     const safeLimit = Math.min(500, Math.max(1, limit));
 
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('d');
     const dateFilter = range.from
       ? Prisma.sql`AND d."dateTime" >= ${range.from} AND d."dateTime" < ${range.to}`
       : Prisma.empty;
@@ -520,8 +514,7 @@ export class DashboardService {
           AND g."externalId"::bigint = i."externalGoodId"
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
-          AND d.state = 0
-          AND d."docType" IN (${saleTypes})
+          AND ${isSale}
           AND d."partnerId" = ${partnerId}
           ${dateFilter}
         GROUP BY i."externalGoodId", g.name, g.code

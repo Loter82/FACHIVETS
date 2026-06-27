@@ -12,11 +12,11 @@ import type {
 } from '@unipro-crm/shared-types';
 import { PrismaService } from '@/prisma/prisma.module';
 import { DataSourceResolverService } from '../../shared/data-source-resolver.service';
+import { docTypeLabel } from '../../shared/unipro/doc-types';
 import {
-  RETURN_DOC_TYPES,
-  SALE_DOC_TYPES,
-  docTypeLabel,
-} from '../../shared/unipro/doc-types';
+  returnDocPredicateSql,
+  saleDocPredicateSql,
+} from '../../shared/unipro/doc-sql';
 
 interface AggRow {
   partner_id: number;
@@ -61,8 +61,8 @@ export class CustomersService {
     const pageSize = Math.min(200, Math.max(1, q.pageSize ?? 25));
     const offset = (page - 1) * pageSize;
 
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
-    const returnTypes = Prisma.join(RETURN_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('d');
+    const isReturn = returnDocPredicateSql('d');
 
     const filters: Prisma.Sql[] = [
       Prisma.sql`p."tenantId" = ${tenantId}`,
@@ -88,11 +88,11 @@ export class CustomersService {
       WITH agg AS (
         SELECT
           p.id AS partner_pk,
-          COUNT(d.id) FILTER (WHERE d."docType" IN (${saleTypes}) AND d.state = 0) AS orders_count,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${saleTypes}) AND d.state = 0), 0) AS sales_sum,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${returnTypes}) AND d.state = 0), 0) AS returns_sum,
-          MIN(d."dateTime") FILTER (WHERE d."docType" IN (${saleTypes}) AND d.state = 0) AS first_at,
-          MAX(d."dateTime") FILTER (WHERE d."docType" IN (${saleTypes}) AND d.state = 0) AS last_at
+          COUNT(d.id) FILTER (WHERE ${isSale}) AS orders_count,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum,
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+          MIN(d."dateTime") FILTER (WHERE ${isSale}) AS first_at,
+          MAX(d."dateTime") FILTER (WHERE ${isSale}) AS last_at
         FROM mirror_partners p
         LEFT JOIN mirror_documents d
           ON d."tenantId" = p."tenantId"
@@ -130,7 +130,7 @@ export class CustomersService {
       WITH agg AS (
         SELECT
           p.id AS partner_pk,
-          COALESCE(SUM(d."docSum") FILTER (WHERE d."docType" IN (${saleTypes}) AND d.state = 0), 0) AS sales_sum
+          COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum
         FROM mirror_partners p
         LEFT JOIN mirror_documents d
           ON d."tenantId" = p."tenantId"
@@ -263,18 +263,18 @@ export class CustomersService {
     dataSourceId: string,
     externalId: number,
   ): Promise<CustomerStatsDto> {
-    const saleTypes = Prisma.join(SALE_DOC_TYPES.map((t) => Prisma.sql`${t}`));
-    const returnTypes = Prisma.join(RETURN_DOC_TYPES.map((t) => Prisma.sql`${t}`));
+    const isSale = saleDocPredicateSql('');
+    const isReturn = returnDocPredicateSql('');
 
     const rows = await this.prisma.$queryRaw<AggRow[]>(Prisma.sql`
       SELECT
         ${externalId}::int AS partner_id,
-        COUNT(*) FILTER (WHERE "docType" IN (${saleTypes}) AND state = 0) AS orders_count,
-        COALESCE(SUM("docSum") FILTER (WHERE "docType" IN (${saleTypes}) AND state = 0), 0) AS sales_sum,
-        COALESCE(SUM("docSum") FILTER (WHERE "docType" IN (${returnTypes}) AND state = 0), 0) AS returns_sum,
-        MIN("dateTime") FILTER (WHERE "docType" IN (${saleTypes}) AND state = 0) AS first_at,
-        MAX("dateTime") FILTER (WHERE "docType" IN (${saleTypes}) AND state = 0) AS last_at,
-        COUNT(DISTINCT "storeId") FILTER (WHERE "docType" IN (${saleTypes}) AND state = 0) AS unique_stores
+        COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
+        COALESCE(SUM("docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum,
+        COALESCE(SUM("docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+        MIN("dateTime") FILTER (WHERE ${isSale}) AS first_at,
+        MAX("dateTime") FILTER (WHERE ${isSale}) AS last_at,
+        COUNT(DISTINCT "storeId") FILTER (WHERE ${isSale}) AS unique_stores
       FROM mirror_documents
       WHERE "tenantId" = ${tenantId}
         AND "dataSourceId" = ${dataSourceId}
