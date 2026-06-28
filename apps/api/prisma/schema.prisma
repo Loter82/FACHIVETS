@@ -483,6 +483,7 @@ model MirrorDocument {
   @@index([tenantId, dataSourceId, storeId])
   @@index([tenantId, dataSourceId, rvHex])
   @@index([tenantId, dataSourceId, treeId])
+  @@index([tenantId, dataSourceId, transactId])
   @@map("mirror_documents")
 }
 

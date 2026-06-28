@@ -1,33 +1,25 @@
 import { Prisma } from '@prisma/client';
 import { RETAIL_DOC_TYPE, WHOLESALE_DOC_TYPE } from './doc-types';
 
-// Юніпро дублює готівковий продаж двома документами на одну і ту саму суму:
+// Юніпро дублює готівковий продаж двома документами на ту саму суму:
 // Видаткова накладна (docType=2, бек-офіс) + Чек (docType=4, РРО). Без
 // дедуплікації виторг подвоюється.
 //
-// На різних інсталяціях зв'язок цих документів кодується по-різному:
-//   1) fTreeId    — поле "дерева" документів (зазвичай продаж↔повернення,
-//                   але інколи містить пару чек↔накладна).
-//   2) fTransactId — фінансовий ID транзакції (часто спільний для пари).
-//   3) Якщо обидва порожні — пара впізнається евристично:
-//      той самий partnerId, та сама docSum, час відрізняється ≤ 5 хв.
+// Пара впізнається за двома полями Unipro:
+//   1) fTreeId    — дерево документів (часто пара чек↔накладна).
+//   2) fTransactId — фінансовий ID транзакції (зазвичай спільний для пари).
 //
-// Дедуп: Чек (4) НЕ зараховується у виторг, якщо існує бодай одна паркова
-// Видаткова (2, state=0) за будь-яким з трьох критеріїв.
-// Самостійні роздрібні чеки (без пари) лишаються в обліку як звичайні
-// продажі.
+// Дедуп: Чек (4) НЕ зараховується у виторг, якщо існує парна Видаткова
+// (2, state=0) зі співпадінням treeId АБО transactId.
+// Самостійні роздрібні чеки (без пари) лишаються в обліку.
 
 function ref(alias: string, column: string): string {
   return alias ? `${alias}."${column}"` : `"${column}"`;
 }
 
-/** Експортовано окремо, щоб мати єдину точку зміни правила пар-дедупа. */
 function pairedWholesaleExistsSql(alias: string): string {
   const treeId = ref(alias, 'treeId');
   const transactId = ref(alias, 'transactId');
-  const partnerId = ref(alias, 'partnerId');
-  const docSum = ref(alias, 'docSum');
-  const dateTime = ref(alias, 'dateTime');
   const tenantId = ref(alias, 'tenantId');
   const dsId = ref(alias, 'dataSourceId');
   return `EXISTS (
@@ -39,12 +31,6 @@ function pairedWholesaleExistsSql(alias: string): string {
       AND (
         (${treeId} IS NOT NULL AND ${treeId} <> '' AND sib."treeId" = ${treeId})
         OR (${transactId} IS NOT NULL AND sib."transactId" = ${transactId})
-        OR (
-          sib."partnerId" IS NOT NULL
-          AND sib."partnerId" = ${partnerId}
-          AND sib."docSum" = ${docSum}
-          AND ABS(EXTRACT(EPOCH FROM (sib."dateTime" - ${dateTime}))) <= 300
-        )
       )
   )`;
 }

@@ -263,22 +263,22 @@ export class CustomersService {
     dataSourceId: string,
     externalId: number,
   ): Promise<CustomerStatsDto> {
-    const isSale = saleDocPredicateSql('');
-    const isReturn = returnDocPredicateSql('');
+    const isSale = saleDocPredicateSql('d');
+    const isReturn = returnDocPredicateSql('d');
 
     const rows = await this.prisma.$queryRaw<AggRow[]>(Prisma.sql`
       SELECT
         ${externalId}::int AS partner_id,
         COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
-        COALESCE(SUM("docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum,
-        COALESCE(SUM("docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
-        MIN("dateTime") FILTER (WHERE ${isSale}) AS first_at,
-        MAX("dateTime") FILTER (WHERE ${isSale}) AS last_at,
-        COUNT(DISTINCT "storeId") FILTER (WHERE ${isSale}) AS unique_stores
-      FROM mirror_documents
-      WHERE "tenantId" = ${tenantId}
-        AND "dataSourceId" = ${dataSourceId}
-        AND "partnerId" = ${externalId}
+        COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum,
+        COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+        MIN(d."dateTime") FILTER (WHERE ${isSale}) AS first_at,
+        MAX(d."dateTime") FILTER (WHERE ${isSale}) AS last_at,
+        COUNT(DISTINCT d."storeId") FILTER (WHERE ${isSale}) AS unique_stores
+      FROM mirror_documents d
+      WHERE d."tenantId" = ${tenantId}
+        AND d."dataSourceId" = ${dataSourceId}
+        AND d."partnerId" = ${externalId}
     `);
     const r = rows[0];
     const ordersCount = Number(r?.orders_count ?? 0);
