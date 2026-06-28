@@ -303,24 +303,24 @@ export class StockService {
 
     const goodFilters: Prisma.Sql[] = [];
     if (q.groupId !== undefined && q.groupId !== null) {
-      goodFilters.push(Prisma.sql`pg.group_id = ${q.groupId}`);
+      goodFilters.push(Prisma.sql`group_id = ${q.groupId}`);
     }
     if (q.search && q.search.trim()) {
       const term = `%${q.search.trim().toLowerCase()}%`;
       goodFilters.push(Prisma.sql`(
-        LOWER(COALESCE(pg.good_name, '')) LIKE ${term}
-        OR LOWER(COALESCE(pg.good_code, '')) LIKE ${term}
+        LOWER(COALESCE(good_name, '')) LIKE ${term}
+        OR LOWER(COALESCE(good_code, '')) LIKE ${term}
       )`);
     }
     switch (presence) {
       case 'in':
-        goodFilters.push(Prisma.sql`pg.total_qtty > 0`);
+        goodFilters.push(Prisma.sql`total_qtty > 0`);
         break;
       case 'out':
-        goodFilters.push(Prisma.sql`pg.total_qtty <= 0`);
+        goodFilters.push(Prisma.sql`total_qtty <= 0`);
         break;
       case 'negative':
-        goodFilters.push(Prisma.sql`pg.total_qtty < 0`);
+        goodFilters.push(Prisma.sql`total_qtty < 0`);
         break;
       default:
         break;
@@ -567,7 +567,7 @@ export class StockService {
       WHERE pg.total_qtty > 0
         AND (
           ls.last_sale_at IS NULL
-          OR ls.last_sale_at < NOW() - (${windowDays} || ' days')::interval
+          OR ls.last_sale_at < NOW() - (INTERVAL '1 day' * ${windowDays})
         )
       ORDER BY (pg.total_qtty * pg.price_in) DESC
       LIMIT ${limit}
@@ -606,7 +606,7 @@ export class StockService {
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
           AND ${saleP}
-          AND d."docDate" >= NOW() - (${windowDays} || ' days')::interval
+          AND d."docDate" >= NOW() - (INTERVAL '1 day' * ${windowDays})
         GROUP BY i."externalGoodId"
       )
       SELECT
