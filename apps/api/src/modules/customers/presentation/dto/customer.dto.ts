@@ -49,6 +49,16 @@ export class CustomerListQueryDto {
   @IsOptional()
   @IsString()
   sourceId?: string;
+
+  /// YYYY-MM-DD — початок діапазону для агрегатів по документах.
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  /// YYYY-MM-DD — кінець діапазону (ексклюзивно).
+  @IsOptional()
+  @IsString()
+  to?: string;
 }
 
 export class CustomerOrdersQueryDto {
@@ -74,4 +84,25 @@ export class CustomerProfileQueryDto {
   @IsOptional()
   @IsString()
   sourceId?: string;
+}
+
+export class CustomerMonthlyQueryDto {
+  @IsOptional()
+  @IsString()
+  sourceId?: string;
+
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  to?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  months?: number;
 }

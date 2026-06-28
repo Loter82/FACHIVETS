@@ -43,6 +43,35 @@ export interface CustomerListQuery {
   hasPurchases?: boolean;
   sort?: CustomerSort;
   order?: 'asc' | 'desc';
+  /// Фільтрує агрегати (виторг/прибуток/чеки) за датою документа. Формат ISO (YYYY-MM-DD).
+  from?: string;
+  to?: string;
+}
+
+/// Динаміка продажів клієнта по місяцях.
+export interface CustomerMonthlyMetricDto {
+  month: string; // ISO першого дня місяця
+  ordersCount: number;
+  salesSum: number;
+  returnsSum: number;
+  netRevenue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number | null;
+  avgOrderValue: number;
+}
+
+export interface CustomerMonthlyResponse {
+  from: string;
+  to: string;
+  months: CustomerMonthlyMetricDto[];
+}
+
+export interface CustomerMonthlyQuery {
+  from?: string;
+  to?: string;
+  months?: number;
+  sourceId?: string;
 }
 
 export interface CustomerProfileDto {

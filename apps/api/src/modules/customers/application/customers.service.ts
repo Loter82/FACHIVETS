@@ -4,6 +4,8 @@ import type {
   CustomerListItemDto,
   CustomerListQuery,
   CustomerListResponse,
+  CustomerMonthlyMetricDto,
+  CustomerMonthlyResponse,
   CustomerOrderDto,
   CustomerOrdersResponse,
   CustomerProfileDto,
@@ -65,6 +67,7 @@ export class CustomersService {
 
     const isSale = saleDocPredicateSql('d');
     const isReturn = returnDocPredicateSql('d');
+    const dateOn = this.buildDateOnSql(q.from, q.to);
 
     const filters: Prisma.Sql[] = [
       Prisma.sql`p."tenantId" = ${tenantId}`,
@@ -101,6 +104,7 @@ export class CustomersService {
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
           AND ${isSale}
+          ${dateOn}
         GROUP BY d."externalId"
       ),
       agg AS (
@@ -117,6 +121,7 @@ export class CustomersService {
           ON d."tenantId" = p."tenantId"
           AND d."dataSourceId" = p."dataSourceId"
           AND d."partnerId" = p."externalId"
+          ${dateOn}
         LEFT JOIN doc_cogs dc ON dc.ext_doc_id = d."externalId"
         ${whereSql}
         GROUP BY p.id
@@ -157,6 +162,7 @@ export class CustomersService {
           ON d."tenantId" = p."tenantId"
           AND d."dataSourceId" = p."dataSourceId"
           AND d."partnerId" = p."externalId"
+          ${dateOn}
         ${whereSql}
         GROUP BY p.id
       )
@@ -399,4 +405,142 @@ export class CustomersService {
         return Prisma.sql`ORDER BY last_at ${dir} NULLS LAST, p.id ASC`;
     }
   }
+
+  // -------------------------------------------------------------------------
+  // MONTHLY DYNAMICS
+  // -------------------------------------------------------------------------
+
+  async monthly(
+    tenantId: string,
+    sourceIdOverride: string | undefined,
+    customerId: string,
+    q: { from?: string; to?: string; months?: number },
+  ): Promise<CustomerMonthlyResponse> {
+    const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
+    const partner = await this.prisma.mirrorPartner.findFirst({
+      where: { id: customerId, tenantId, dataSourceId },
+      select: { externalId: true },
+    });
+    if (!partner) throw new NotFoundException('Клієнта не знайдено');
+
+    const { from, to } = this.resolveMonthlyRange(q.from, q.to, q.months ?? 12);
+
+    const isSale = saleDocPredicateSql('d');
+    const isReturn = returnDocPredicateSql('d');
+
+    const rows = await this.prisma.$queryRaw<MonthlyRow[]>(Prisma.sql`
+      WITH doc_cogs AS (
+        SELECT d."externalId" AS ext_doc_id,
+               SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)) AS cogs
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        LEFT JOIN mirror_goods g
+          ON g."tenantId" = i."tenantId"
+          AND g."dataSourceId" = i."dataSourceId"
+          AND g."externalId"::bigint = i."externalGoodId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND d."partnerId" = ${partner.externalId}
+          AND d."dateTime" >= ${from}
+          AND d."dateTime" < ${to}
+          AND ${isSale}
+        GROUP BY d."externalId"
+      )
+      SELECT
+        DATE_TRUNC('month', d."dateTime") AS month,
+        COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
+        COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum,
+        COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+        COALESCE(SUM(dc.cogs) FILTER (WHERE ${isSale}), 0) AS cogs
+      FROM mirror_documents d
+      LEFT JOIN doc_cogs dc ON dc.ext_doc_id = d."externalId"
+      WHERE d."tenantId" = ${tenantId}
+        AND d."dataSourceId" = ${dataSourceId}
+        AND d."partnerId" = ${partner.externalId}
+        AND d."dateTime" >= ${from}
+        AND d."dateTime" < ${to}
+      GROUP BY DATE_TRUNC('month', d."dateTime")
+      HAVING (
+        COUNT(*) FILTER (WHERE ${isSale}) > 0
+        OR COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) > 0
+      )
+      ORDER BY DATE_TRUNC('month', d."dateTime") ASC
+    `);
+
+    const months: CustomerMonthlyMetricDto[] = rows.map((r) => {
+      const ordersCount = Number(r.orders_count ?? 0);
+      const salesSum = Number(r.sales_sum ?? 0);
+      const returnsSum = Number(r.returns_sum ?? 0);
+      const cogs = Number(r.cogs ?? 0);
+      const grossProfit = salesSum - cogs;
+      const marginPct = salesSum > 0 ? (grossProfit / salesSum) * 100 : null;
+      return {
+        month: r.month.toISOString(),
+        ordersCount,
+        salesSum,
+        returnsSum,
+        netRevenue: salesSum - returnsSum,
+        cogs,
+        grossProfit,
+        marginPct,
+        avgOrderValue: ordersCount > 0 ? salesSum / ordersCount : 0,
+      };
+    });
+
+    return { from: from.toISOString(), to: to.toISOString(), months };
+  }
+
+  // -------------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------------
+
+  private buildDateOnSql(from?: string, to?: string): Prisma.Sql {
+    const parts: Prisma.Sql[] = [];
+    const fromDate = parseDateInput(from);
+    const toDate = parseDateInput(to, /* exclusiveEnd */ true);
+    if (fromDate) parts.push(Prisma.sql`d."dateTime" >= ${fromDate}`);
+    if (toDate) parts.push(Prisma.sql`d."dateTime" < ${toDate}`);
+    if (!parts.length) return Prisma.empty;
+    return Prisma.sql`AND ${Prisma.join(parts, ' AND ')}`;
+  }
+
+  private resolveMonthlyRange(from?: string, to?: string, months = 12): { from: Date; to: Date } {
+    const toDate = parseDateInput(to, true) ?? new Date();
+    let fromDate = parseDateInput(from);
+    if (!fromDate) {
+      const safeMonths = Math.min(60, Math.max(1, months));
+      const d = new Date(toDate);
+      d.setUTCDate(1);
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCMonth(d.getUTCMonth() - (safeMonths - 1));
+      fromDate = d;
+    }
+    if (fromDate >= toDate) {
+      fromDate = new Date(toDate.getTime() - 30 * 86_400_000);
+    }
+    return { from: fromDate, to: toDate };
+  }
+}
+
+interface MonthlyRow {
+  month: Date;
+  orders_count: bigint;
+  sales_sum: number | string | null;
+  returns_sum: number | string | null;
+  cogs: number | string | null;
+}
+
+function parseDateInput(value: string | undefined, exclusiveEnd = false): Date | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (m) {
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    if (exclusiveEnd) d.setUTCDate(d.getUTCDate() + 1);
+    return d;
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }

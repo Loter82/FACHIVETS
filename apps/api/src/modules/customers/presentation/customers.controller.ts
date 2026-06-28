@@ -8,6 +8,7 @@ import { JwtAuthGuard } from '@/modules/auth/infrastructure/guards/jwt-auth.guar
 import { CustomersService } from '../application/customers.service';
 import {
   CustomerListQueryDto,
+  CustomerMonthlyQueryDto,
   CustomerOrdersQueryDto,
   CustomerProfileQueryDto,
 } from './dto/customer.dto';
@@ -43,5 +44,19 @@ export class CustomersController {
     @Query() q: CustomerOrdersQueryDto,
   ) {
     return this.customers.orders(user.tenantId, q.sourceId, id, q.page, q.pageSize);
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER', 'VIEWER')
+  @Get(':id/monthly')
+  monthly(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Query() q: CustomerMonthlyQueryDto,
+  ) {
+    return this.customers.monthly(user.tenantId, q.sourceId, id, {
+      from: q.from,
+      to: q.to,
+      months: q.months,
+    });
   }
 }

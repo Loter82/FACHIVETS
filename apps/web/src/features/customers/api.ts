@@ -1,6 +1,8 @@
 import type {
   CustomerListQuery,
   CustomerListResponse,
+  CustomerMonthlyQuery,
+  CustomerMonthlyResponse,
   CustomerOrdersResponse,
   CustomerProfileDto,
 } from '@unipro-crm/shared-types';
@@ -18,6 +20,12 @@ export const customersApi = {
   async orders(id: string, page = 1, pageSize = 25): Promise<CustomerOrdersResponse> {
     const { data } = await http.get<CustomerOrdersResponse>(`/customers/${id}/orders`, {
       params: { page, pageSize },
+    });
+    return data;
+  },
+  async monthly(id: string, query: CustomerMonthlyQuery = {}): Promise<CustomerMonthlyResponse> {
+    const { data } = await http.get<CustomerMonthlyResponse>(`/customers/${id}/monthly`, {
+      params: query,
     });
     return data;
   },
