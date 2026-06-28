@@ -674,7 +674,7 @@ export class DashboardService {
     const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
     const isSale = saleDocPredicateSql('d');
 
-    const [counts, samples, payloadKeys, payloadValues] = await Promise.all([
+    const [counts, samples, payloadKeys, payloadValues, goodsStats, joinedSample] = await Promise.all([
       this.prisma.$queryRaw<
         Array<{ total: bigint; with_price_in: bigint; zero_price_in: bigint; null_price_in: bigint; sum_qtty: number | string | null; sum_cost: number | string | null; sum_revenue: number | string | null }>
       >(Prisma.sql`
@@ -742,6 +742,39 @@ export class DashboardService {
           AND i."dataSourceId" = ${dataSourceId}
         LIMIT 3
       `),
+      this.prisma.$queryRaw<
+        Array<{ total: bigint; with_price_in: bigint; zero_price_in: bigint; null_price_in: bigint; avg_price_in: number | string | null }>
+      >(Prisma.sql`
+        SELECT
+          COUNT(*)::bigint AS total,
+          COUNT(*) FILTER (WHERE "priceIn" > 0)::bigint AS with_price_in,
+          COUNT(*) FILTER (WHERE "priceIn" = 0)::bigint AS zero_price_in,
+          COUNT(*) FILTER (WHERE "priceIn" IS NULL)::bigint AS null_price_in,
+          AVG("priceIn") FILTER (WHERE "priceIn" > 0) AS avg_price_in
+        FROM mirror_goods
+        WHERE "tenantId" = ${tenantId} AND "dataSourceId" = ${dataSourceId}
+      `),
+      this.prisma.$queryRaw<
+        Array<{ items: bigint; matched: bigint; with_goods_price_in: bigint; sum_cost_via_goods: number | string | null }>
+      >(Prisma.sql`
+        SELECT
+          COUNT(*)::bigint AS items,
+          COUNT(g.id)::bigint AS matched,
+          COUNT(*) FILTER (WHERE g."priceIn" > 0)::bigint AS with_goods_price_in,
+          COALESCE(SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)), 0) AS sum_cost_via_goods
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        LEFT JOIN mirror_goods g
+          ON g."tenantId" = i."tenantId"
+          AND g."dataSourceId" = i."dataSourceId"
+          AND g."externalId"::bigint = i."externalGoodId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND ${isSale}
+      `),
     ]);
 
     return {
@@ -759,6 +792,19 @@ export class DashboardService {
       sampleItems: samples,
       payloadKeys: payloadKeys.map((r) => ({ key: r.key, count: Number(r.cnt) })),
       payloadCandidates: payloadValues,
+      goodsStats: goodsStats[0] ? {
+        total: Number(goodsStats[0].total ?? 0),
+        withPriceIn: Number(goodsStats[0].with_price_in ?? 0),
+        zeroPriceIn: Number(goodsStats[0].zero_price_in ?? 0),
+        nullPriceIn: Number(goodsStats[0].null_price_in ?? 0),
+        avgPriceIn: Number(goodsStats[0].avg_price_in ?? 0),
+      } : null,
+      cogsViaGoodsJoin: joinedSample[0] ? {
+        items: Number(joinedSample[0].items ?? 0),
+        matched: Number(joinedSample[0].matched ?? 0),
+        withGoodsPriceIn: Number(joinedSample[0].with_goods_price_in ?? 0),
+        sumCost: Number(joinedSample[0].sum_cost_via_goods ?? 0),
+      } : null,
     };
   }
 
