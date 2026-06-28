@@ -422,7 +422,7 @@ export class StockService {
     if (goodIds.length) {
       const goodIdsBig = goodIds.map((id) => BigInt(id));
       const lastSaleSql = Prisma.sql`
-        SELECT i."externalGoodId"::bigint AS good_id, MAX(d."docDate") AS last_sale_at
+        SELECT i."externalGoodId"::bigint AS good_id, MAX(d."dateTime") AS last_sale_at
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
@@ -561,7 +561,7 @@ export class StockService {
       last_sales AS (
         SELECT
           i."externalGoodId"                                                  AS good_id_big,
-          MAX(d."docDate")                                                    AS last_sale_at
+          MAX(d."dateTime")                                                   AS last_sale_at
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
@@ -618,7 +618,7 @@ export class StockService {
         SELECT
           i."externalGoodId"                                                  AS good_id_big,
           SUM(i."qtty")                                                       AS qtty_sold,
-          MAX(d."docDate")                                                    AS last_sale_at
+          MAX(d."dateTime")                                                   AS last_sale_at
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
@@ -627,7 +627,7 @@ export class StockService {
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
           AND ${saleP}
-          AND d."docDate" >= NOW() - (INTERVAL '1 day' * ${windowDays})
+          AND d."dateTime" >= NOW() - (INTERVAL '1 day' * ${windowDays})
         GROUP BY i."externalGoodId"
       )
       SELECT
@@ -687,46 +687,5 @@ export class StockService {
     }));
 
     return { windowDays, topByValue, deadStock, shortage };
-  }
-
-  // -------------------------------------------------------------------------
-  // DIAG — тимчасово: ловимо помилки items/analytics і повертаємо текст.
-  // -------------------------------------------------------------------------
-
-  async diag(tenantId: string, sourceIdOverride?: string) {
-    const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
-    const errors: Record<string, string | null> = {};
-
-    try {
-      await this.list(tenantId, sourceIdOverride, { presence: 'all', page: 1, pageSize: 1 });
-      errors.list_all = null;
-    } catch (e) {
-      errors.list_all = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-    }
-
-    try {
-      await this.analytics(tenantId, sourceIdOverride, { windowDays: 30, limit: 1 });
-      errors.analytics = null;
-    } catch (e) {
-      errors.analytics = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-    }
-
-    // Smoke-test the bare CTE без подальших фільтрів і last_sale_at — для ізоляції.
-    try {
-      const r = await this.prisma.$queryRaw<Array<{ c: bigint }>>(Prisma.sql`
-        WITH per_good AS (
-          SELECT s."goodId" AS good_id, SUM(s."qtty") AS total_qtty
-          FROM mirror_store_stock s
-          WHERE s."tenantId" = ${tenantId} AND s."dataSourceId" = ${dataSourceId}
-          GROUP BY s."goodId"
-        )
-        SELECT COUNT(*)::bigint AS c FROM per_good
-      `);
-      errors.smoke_per_good = `ok rows=${Number(r[0]?.c ?? 0)}`;
-    } catch (e) {
-      errors.smoke_per_good = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-    }
-
-    return { dataSourceId, errors };
   }
 }

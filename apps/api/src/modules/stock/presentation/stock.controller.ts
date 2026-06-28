@@ -43,10 +43,4 @@ export class StockController {
   analytics(@CurrentUser() user: JwtPayload, @Query() q: StockAnalyticsQueryDto) {
     return this.stock.analytics(user.tenantId, q.sourceId, q);
   }
-
-  @Roles('OWNER', 'ADMIN')
-  @Get('diag')
-  diag(@CurrentUser() user: JwtPayload, @Query() q: StockSummaryQueryDto) {
-    return this.stock.diag(user.tenantId, q.sourceId);
-  }
 }
