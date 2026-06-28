@@ -88,12 +88,16 @@ export class CustomersService {
 
     const rows = await this.prisma.$queryRaw<ListRow[]>(Prisma.sql`
       WITH doc_cogs AS (
-        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)) AS cogs
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
           AND d."dataSourceId" = i."dataSourceId"
           AND d."externalId" = i."externalDocId"
+        LEFT JOIN mirror_goods g
+          ON g."tenantId" = i."tenantId"
+          AND g."dataSourceId" = i."dataSourceId"
+          AND g."externalId"::bigint = i."externalGoodId"
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
           AND ${isSale}
@@ -285,12 +289,16 @@ export class CustomersService {
 
     const rows = await this.prisma.$queryRaw<AggRow[]>(Prisma.sql`
       WITH doc_cogs AS (
-        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)) AS cogs
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
           AND d."dataSourceId" = i."dataSourceId"
           AND d."externalId" = i."externalDocId"
+        LEFT JOIN mirror_goods g
+          ON g."tenantId" = i."tenantId"
+          AND g."dataSourceId" = i."dataSourceId"
+          AND g."externalId"::bigint = i."externalGoodId"
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
           AND d."partnerId" = ${externalId}

@@ -130,12 +130,16 @@ export class DashboardService {
       this.prisma.$queryRaw<KpiItemsRow[]>(Prisma.sql`
         SELECT
           COALESCE(SUM(i.qtty), 0) AS items_sold,
-          COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs
+          COALESCE(SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)), 0) AS cogs
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
           AND d."dataSourceId" = i."dataSourceId"
           AND d."externalId" = i."externalDocId"
+        LEFT JOIN mirror_goods g
+          ON g."tenantId" = i."tenantId"
+          AND g."dataSourceId" = i."dataSourceId"
+          AND g."externalId"::bigint = i."externalGoodId"
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
           AND ${isSale}
@@ -168,12 +172,16 @@ export class DashboardService {
           AND d."dateTime" < ${r.prevTo}
       `),
         this.prisma.$queryRaw<{ cogs: number | string | null }[]>(Prisma.sql`
-          SELECT COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs
+          SELECT COALESCE(SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)), 0) AS cogs
           FROM mirror_document_items i
           JOIN mirror_documents d
             ON d."tenantId" = i."tenantId"
             AND d."dataSourceId" = i."dataSourceId"
             AND d."externalId" = i."externalDocId"
+          LEFT JOIN mirror_goods g
+            ON g."tenantId" = i."tenantId"
+            AND g."dataSourceId" = i."dataSourceId"
+            AND g."externalId"::bigint = i."externalGoodId"
           WHERE i."tenantId" = ${tenantId}
             AND i."dataSourceId" = ${dataSourceId}
             AND ${isSale}
@@ -331,12 +339,16 @@ export class DashboardService {
 
     const rows = await this.prisma.$queryRaw<TopCustomerRow[]>(Prisma.sql`
       WITH doc_cogs AS (
-        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)) AS cogs
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
           AND d."dataSourceId" = i."dataSourceId"
           AND d."externalId" = i."externalDocId"
+        LEFT JOIN mirror_goods g
+          ON g."tenantId" = i."tenantId"
+          AND g."dataSourceId" = i."dataSourceId"
+          AND g."externalId"::bigint = i."externalGoodId"
         WHERE i."tenantId" = ${tenantId}
           AND i."dataSourceId" = ${dataSourceId}
           AND ${isSale}
@@ -402,7 +414,7 @@ export class DashboardService {
         g.code AS code,
         COALESCE(SUM(i.qtty), 0) AS qtty,
         COALESCE(SUM(i.sum), 0) AS revenue,
-        COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs
+        COALESCE(SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)), 0) AS cogs
       FROM mirror_document_items i
       JOIN mirror_documents d
         ON d."tenantId" = i."tenantId"
@@ -475,12 +487,16 @@ export class DashboardService {
     const [rows, totalRows] = await Promise.all([
       this.prisma.$queryRaw<Row[]>(Prisma.sql`
         WITH doc_cogs AS (
-          SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+          SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)) AS cogs
           FROM mirror_document_items i
           JOIN mirror_documents d
             ON d."tenantId" = i."tenantId"
             AND d."dataSourceId" = i."dataSourceId"
             AND d."externalId" = i."externalDocId"
+          LEFT JOIN mirror_goods g
+            ON g."tenantId" = i."tenantId"
+            AND g."dataSourceId" = i."dataSourceId"
+            AND g."externalId"::bigint = i."externalGoodId"
           WHERE i."tenantId" = ${tenantId}
             AND i."dataSourceId" = ${dataSourceId}
             AND ${isSale}
@@ -598,7 +614,7 @@ export class DashboardService {
           g.code AS code,
           COALESCE(SUM(i.qtty), 0) AS qtty,
           COALESCE(SUM(i.sum), 0) AS revenue,
-          COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs,
+          COALESCE(SUM(i.qtty * COALESCE(NULLIF(i."priceIn", 0), g."priceIn", 0)), 0) AS cogs,
           COUNT(DISTINCT d."externalId") AS orders_count
         FROM mirror_document_items i
         JOIN mirror_documents d
