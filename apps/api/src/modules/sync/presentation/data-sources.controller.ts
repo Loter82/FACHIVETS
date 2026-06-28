@@ -122,6 +122,13 @@ export class DataSourcesController {
   ) {
     return this.service.getTableColumns(user.tenantId, id, schema, table);
   }
+
+  /** Діагностика: шукає таблиці залишків у джерелі. */
+  @Roles('OWNER', 'ADMIN')
+  @Get(':id/diag/stock-tables')
+  diagStockTables(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.service.diagStockTables(user.tenantId, id);
+  }
 }
 
 function extractCredentials(

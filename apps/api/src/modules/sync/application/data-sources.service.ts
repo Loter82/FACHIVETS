@@ -153,6 +153,63 @@ export class DataSourcesService {
     return this.mssql.describeTable(creds, schema, table);
   }
 
+  /** Діагностика: шукає таблиці залишків і повертає їх колонки + 3 семпли рядків. */
+  async diagStockTables(tenantId: string, id: string) {
+    const row = await this.prisma.dataSource.findFirst({ where: { id, tenantId } });
+    if (!row) throw new NotFoundException('Джерело не знайдено');
+    if (row.type !== 'UNIPRO_MSSQL') {
+      throw new BadRequestException('Доступно лише для MSSQL-джерел');
+    }
+    const creds = this.cipher.decrypt<MssqlCredentials>(row.credentialsCipher);
+    const overview = await this.mssql.listTables(creds);
+
+    const pattern = /rem|stock|ost|qty|kolich|skl|sklad|nalich/i;
+    const candidates = overview.tables
+      .filter((t) => pattern.test(t.name))
+      .sort((a, b) => (b.rowCount ?? 0) - (a.rowCount ?? 0))
+      .slice(0, 12);
+
+    const enriched = await Promise.all(
+      candidates.map(async (t) => {
+        try {
+          const cols = await this.mssql.describeTable(creds, t.schema, t.name);
+          let samples: unknown[] = [];
+          try {
+            samples = await this.mssql.query(
+              creds,
+              `SELECT TOP 3 * FROM [${t.schema}].[${t.name}]`,
+            );
+          } catch {
+            samples = [];
+          }
+          return {
+            schema: t.schema,
+            name: t.name,
+            type: t.type,
+            rowCount: t.rowCount,
+            columns: cols.columns.map((c) => ({ name: c.name, dataType: c.dataType })),
+            samples,
+          };
+        } catch (err) {
+          return {
+            schema: t.schema,
+            name: t.name,
+            type: t.type,
+            rowCount: t.rowCount,
+            error: (err as Error).message,
+          };
+        }
+      }),
+    );
+
+    return {
+      database: overview.database,
+      totalTables: overview.tables.length,
+      candidatesCount: candidates.length,
+      candidates: enriched,
+    };
+  }
+
   private async runTest(
     type: DataSourceType,
     credentials: DataSourceCredentials,
