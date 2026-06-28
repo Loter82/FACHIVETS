@@ -543,3 +543,33 @@ export function mapDocumentItem(ctx: MapperCtx, row: Row): MirrorDocumentItemInp
     payload: toPayload(row),
   };
 }
+
+// ---------------------------------------------------------------------------
+// uniAStoreNow — поточні залишки товарів по складах
+// ---------------------------------------------------------------------------
+
+export interface MirrorStoreStockInput {
+  tenantId: string;
+  dataSourceId: string;
+  externalId: bigint;
+  entId: number;
+  storeId: number;
+  goodId: number;
+  qtty: number;
+  sum: number;
+  payload: Prisma.InputJsonValue;
+}
+
+export function mapStoreStock(ctx: MapperCtx, row: Row): MirrorStoreStockInput {
+  return {
+    tenantId: ctx.tenantId,
+    dataSourceId: ctx.dataSourceId,
+    externalId: toBig(row.fId),
+    entId: toInt(row.fEntId) ?? 0,
+    storeId: toInt(row.fStoreId) ?? 0,
+    goodId: toInt(row.fGoodId) ?? 0,
+    qtty: toFloat(row.fQtty) ?? 0,
+    sum: toFloat(row.fSum) ?? 0,
+    payload: toPayload(row),
+  };
+}

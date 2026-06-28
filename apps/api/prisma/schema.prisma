@@ -133,6 +133,7 @@ enum SyncEntity {
   DOCUMENTS
   DOCUMENT_ITEMS
   PAYMENTS
+  STORE_STOCK
 }
 
 /// Конфігурація під'єднання до зовнішньої БД (Unipro MSSQL або JSON-агент).
@@ -519,4 +520,26 @@ model MirrorDocumentItem {
   @@index([tenantId, dataSourceId, externalDocId])
   @@index([tenantId, dataSourceId, externalGoodId])
   @@map("mirror_document_items")
+}
+
+/// Дзеркало uniAStoreNow — поточні залишки товарів по складах.
+/// fSum = сума за поточною ціною (як в Unipro), не використовуємо як «вартість»,
+/// бо собівартість беремо з MirrorGood.priceIn (єдине джерело для COGS).
+model MirrorStoreStock {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dataSourceId String
+  externalId   BigInt
+  entId        Int
+  storeId      Int
+  goodId       Int
+  qtty         Float
+  sum          Float
+  payload      Json
+  syncedAt     DateTime @default(now())
+
+  @@unique([tenantId, dataSourceId, externalId])
+  @@index([tenantId, dataSourceId, goodId])
+  @@index([tenantId, dataSourceId, storeId, goodId])
+  @@map("mirror_store_stock")
 }

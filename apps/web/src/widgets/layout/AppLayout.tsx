@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import {
   LayoutDashboard,
   Users,
+  Package,
   PieChart,
   Megaphone,
   Zap,
@@ -23,6 +24,7 @@ import { useAuthStore } from '@/app/auth-store';
 const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: '/', label: 'Дашборд', icon: LayoutDashboard },
   { to: '/customers', label: 'Клієнти', icon: Users },
+  { to: '/stock', label: 'Залишки товарів', icon: Package },
   { to: '/segments', label: 'Сегменти', icon: PieChart },
   { to: '/campaigns', label: 'Кампанії', icon: Megaphone },
   { to: '/automation', label: 'Автоматизація', icon: Zap },

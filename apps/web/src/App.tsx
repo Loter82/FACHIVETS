@@ -5,6 +5,7 @@ import { AppLayout } from '@/widgets/layout/AppLayout';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
 import { CustomersListPage } from '@/features/customers/CustomersListPage';
 import { CustomerProfilePage } from '@/features/customers/CustomerProfilePage';
+import { StockPage } from '@/features/stock/StockPage';
 import { SettingsSourcesPage } from '@/features/data-sources/SettingsSourcesPage';
 import { SchemaInspectorPage } from '@/features/data-sources/SchemaInspectorPage';
 import { SyncPage } from '@/features/sync/SyncPage';
@@ -25,6 +26,7 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="customers" element={<CustomersListPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
+        <Route path="stock" element={<StockPage />} />
         <Route
           path="segments"
           element={<PlaceholderPage title="Сегменти" description="RFM, ABC, ручні фільтри" />}

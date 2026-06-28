@@ -10,6 +10,7 @@ export enum SyncEntityDto {
   GOODS_GROUPS = 'GOODS_GROUPS',
   GOODS = 'GOODS',
   DOCUMENTS = 'DOCUMENTS',
+  STORE_STOCK = 'STORE_STOCK',
 }
 
 export class RunEntitySyncDto {

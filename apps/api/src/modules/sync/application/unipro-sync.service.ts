@@ -28,6 +28,7 @@ import {
   mapPartner,
   mapPartnerGroup,
   mapStore,
+  mapStoreStock,
   mapUser,
   type MapperCtx,
 } from './unipro-mapper';
@@ -147,6 +148,7 @@ export class UniproSyncService {
       'GOODS_GROUPS',
       'GOODS',
       'DOCUMENTS',
+      'STORE_STOCK',
     ];
     const results: JobResult[] = [];
     for (const e of order) {
@@ -173,8 +175,9 @@ export class UniproSyncService {
       this.prisma.mirrorGood.count({ where: { tenantId, dataSourceId } }),
       this.prisma.mirrorDocument.count({ where: { tenantId, dataSourceId } }),
       this.prisma.mirrorDocumentItem.count({ where: { tenantId, dataSourceId } }),
+      this.prisma.mirrorStoreStock.count({ where: { tenantId, dataSourceId } }),
     ]);
-    const [ent, st, us, pg, pa, gg, gd, doc, di] = counts;
+    const [ent, st, us, pg, pa, gg, gd, doc, di, stk] = counts;
     return {
       cursors: cursors.map((c) => ({
         entity: c.entity,
@@ -196,6 +199,7 @@ export class UniproSyncService {
         GOODS: gd,
         DOCUMENTS: doc,
         DOCUMENT_ITEMS: di,
+        STORE_STOCK: stk,
       },
     };
   }
@@ -235,6 +239,8 @@ export class UniproSyncService {
         return this.syncGoods(ctx, creds);
       case 'DOCUMENTS':
         return this.syncDocuments(ctx, creds);
+      case 'STORE_STOCK':
+        return this.syncStoreStock(ctx, creds);
       case 'DOCUMENT_ITEMS':
       case 'PAYMENTS':
         throw new BadRequestException(
@@ -350,6 +356,27 @@ export class UniproSyncService {
         where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
       });
       if (mapped.length) await tx.mirrorGood.createMany({ data: mapped });
+    }, TX_OPTS);
+    return { read: rows.length, written: mapped.length };
+  }
+
+  private async syncStoreStock(ctx: MapperCtx, creds: MssqlCredentials) {
+    // uniAStoreNow — невелика таблиця (≈ 13k рядків), повне перезаписування.
+    const rows = await this.mssql.query<Record<string, unknown>>(
+      creds,
+      'SELECT fId, fEntId, fStoreId, fGoodId, fQtty, fSum FROM dbo.uniAStoreNow',
+    );
+    const mapped = rows.map((r) => mapStoreStock(ctx, r));
+    await this.prisma.$transaction(async (tx) => {
+      await tx.mirrorStoreStock.deleteMany({
+        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
+      });
+      if (mapped.length) {
+        // createMany не любить великі пачки JSON — ділимо по 1000.
+        for (let i = 0; i < mapped.length; i += 1000) {
+          await tx.mirrorStoreStock.createMany({ data: mapped.slice(i, i + 1000) });
+        }
+      }
     }, TX_OPTS);
     return { read: rows.length, written: mapped.length };
   }
