@@ -52,4 +52,10 @@ export class DashboardController {
       q.limit ?? 200,
     );
   }
+
+  @Roles('OWNER', 'ADMIN')
+  @Get('diag/cogs')
+  diagCogs(@CurrentUser() user: JwtPayload, @Query('sourceId') sourceId?: string) {
+    return this.dashboard.diagCogs(user.tenantId, sourceId);
+  }
 }

@@ -670,6 +670,98 @@ export class DashboardService {
     };
   }
 
+  async diagCogs(tenantId: string, sourceIdOverride?: string) {
+    const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
+    const isSale = saleDocPredicateSql('d');
+
+    const [counts, samples, payloadKeys, payloadValues] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{ total: bigint; with_price_in: bigint; zero_price_in: bigint; null_price_in: bigint; sum_qtty: number | string | null; sum_cost: number | string | null; sum_revenue: number | string | null }>
+      >(Prisma.sql`
+        SELECT
+          COUNT(*)::bigint AS total,
+          COUNT(*) FILTER (WHERE i."priceIn" > 0)::bigint AS with_price_in,
+          COUNT(*) FILTER (WHERE i."priceIn" = 0)::bigint AS zero_price_in,
+          COUNT(*) FILTER (WHERE i."priceIn" IS NULL)::bigint AS null_price_in,
+          COALESCE(SUM(i.qtty), 0) AS sum_qtty,
+          COALESCE(SUM(i.qtty * i."priceIn"), 0) AS sum_cost,
+          COALESCE(SUM(i.sum), 0) AS sum_revenue
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND ${isSale}
+      `),
+      this.prisma.$queryRaw<
+        Array<{ external_id: string; doc_id: string; qtty: number; price_in: number; price_out: number; sum: number; payload: unknown }>
+      >(Prisma.sql`
+        SELECT
+          i."externalId"::text AS external_id,
+          i."externalDocId"::text AS doc_id,
+          i.qtty,
+          i."priceIn" AS price_in,
+          i."priceOut" AS price_out,
+          i.sum,
+          i.payload
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND ${isSale}
+        ORDER BY d."dateTime" DESC
+        LIMIT 3
+      `),
+      this.prisma.$queryRaw<Array<{ key: string; cnt: bigint }>>(Prisma.sql`
+        SELECT key, COUNT(*)::bigint AS cnt
+        FROM mirror_document_items i, jsonb_object_keys(i.payload) AS key
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+        GROUP BY key
+        ORDER BY cnt DESC
+        LIMIT 50
+      `),
+      this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+        SELECT
+          i.payload->>'fPriceIn'   AS f_price_in,
+          i.payload->>'fInPrice'   AS f_in_price,
+          i.payload->>'fPrice0'    AS f_price0,
+          i.payload->>'fPriceIn2'  AS f_price_in2,
+          i.payload->>'fCostPrice' AS f_cost_price,
+          i.payload->>'fCost'      AS f_cost,
+          i.payload->>'fPriceOut'  AS f_price_out,
+          i.payload->>'fSum'       AS f_sum,
+          i.payload->>'fQtty'      AS f_qtty
+        FROM mirror_document_items i
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+        LIMIT 3
+      `),
+    ]);
+
+    return {
+      tenantId,
+      dataSourceId,
+      stats: counts[0] ? {
+        total: Number(counts[0].total ?? 0),
+        withPriceIn: Number(counts[0].with_price_in ?? 0),
+        zeroPriceIn: Number(counts[0].zero_price_in ?? 0),
+        nullPriceIn: Number(counts[0].null_price_in ?? 0),
+        sumQtty: Number(counts[0].sum_qtty ?? 0),
+        sumCost: Number(counts[0].sum_cost ?? 0),
+        sumRevenue: Number(counts[0].sum_revenue ?? 0),
+      } : null,
+      sampleItems: samples,
+      payloadKeys: payloadKeys.map((r) => ({ key: r.key, count: Number(r.cnt) })),
+      payloadCandidates: payloadValues,
+    };
+  }
+
   private resolveRange(period: DashboardPeriod): PeriodRange {
     const now = new Date();
     const to = now;
