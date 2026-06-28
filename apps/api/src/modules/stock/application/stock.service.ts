@@ -348,7 +348,10 @@ export class StockService {
     })();
 
     const saleP = saleDocPredicateSql('d');
-    const baseSql = Prisma.sql`
+
+    // Внутрішня агрегація — без last_sale_at (його дотягуємо окремим запитом
+    // для повернених good_ids, щоб не робити корельовану підзапит по всіх SKU).
+    const enrichedCte = Prisma.sql`
       WITH per_good AS (
         SELECT
           s."goodId"                                  AS good_id,
@@ -385,32 +388,23 @@ export class StockService {
             WHEN pg.total_qtty > 0 AND pg.price_out > 0
             THEN ((pg.price_out - pg.price_in) / pg.price_out) * 100
             ELSE 0
-          END                                                       AS margin_pct,
-          (
-            SELECT MAX(d."docDate")
-            FROM mirror_document_items i
-            JOIN mirror_documents d
-              ON d."tenantId" = i."tenantId"
-             AND d."dataSourceId" = i."dataSourceId"
-             AND d."externalId" = i."externalDocId"
-            WHERE i."tenantId" = ${tenantId}
-              AND i."dataSourceId" = ${dataSourceId}
-              AND i."externalGoodId" = pg.good_id::bigint
-              AND ${saleP}
-          )                                                         AS last_sale_at
+          END                                                       AS margin_pct
         FROM per_good pg
         LEFT JOIN mirror_goods_groups gg
           ON gg."tenantId" = ${tenantId}
          AND gg."dataSourceId" = ${dataSourceId}
          AND gg."externalId" = pg.group_id
       )
-      SELECT * FROM enriched
-      ${goodWhere}
     `;
 
-    const countSql = Prisma.sql`SELECT COUNT(*)::bigint AS c FROM (${baseSql}) e`;
+    const countSql = Prisma.sql`
+      ${enrichedCte}
+      SELECT COUNT(*)::bigint AS c FROM enriched ${goodWhere}
+    `;
     const rowsSql = Prisma.sql`
-      ${baseSql}
+      ${enrichedCte}
+      SELECT *, NULL::timestamp AS last_sale_at FROM enriched
+      ${goodWhere}
       ORDER BY ${orderExpr} ${order} NULLS LAST, good_name ASC
       LIMIT ${pageSize} OFFSET ${offset}
     `;
@@ -422,6 +416,33 @@ export class StockService {
 
     const total = Number(countRows[0]?.c ?? 0);
     const goodIds = rows.map((r) => r.good_id);
+
+    // Last sale per good — окремим запитом тільки для повернутих good_ids.
+    const lastSaleByGood = new Map<number, Date>();
+    if (goodIds.length) {
+      const goodIdsBig = goodIds.map((id) => BigInt(id));
+      const lastSaleSql = Prisma.sql`
+        SELECT i."externalGoodId"::bigint AS good_id, MAX(d."docDate") AS last_sale_at
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+         AND d."dataSourceId" = i."dataSourceId"
+         AND d."externalId" = i."externalDocId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND i."externalGoodId" IN (${Prisma.join(goodIdsBig)})
+          AND ${saleP}
+        GROUP BY i."externalGoodId"
+      `;
+      const lsRows = await this.prisma.$queryRaw<Array<{ good_id: bigint; last_sale_at: Date | null }>>(lastSaleSql);
+      for (const r of lsRows) {
+        if (r.last_sale_at) lastSaleByGood.set(Number(r.good_id), r.last_sale_at);
+      }
+    }
+    for (const r of rows) {
+      const ls = lastSaleByGood.get(r.good_id);
+      r.last_sale_at = ls ?? null;
+    }
 
     let storeRows: StoreRow[] = [];
     if (goodIds.length) {
