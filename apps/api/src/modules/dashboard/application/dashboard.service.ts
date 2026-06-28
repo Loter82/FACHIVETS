@@ -82,9 +82,10 @@ export class DashboardService {
     tenantId: string,
     sourceIdOverride: string | undefined,
     period: DashboardPeriod,
+    override?: { from?: string; to?: string },
   ): Promise<DashboardOverviewDto> {
     const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
-    const range = this.resolveRange(period);
+    const range = this.resolveRange(period, override);
     const [kpi, timeline, topCustomers, topProducts] = await Promise.all([
       this.kpi(tenantId, dataSourceId, period, range),
       this.timeline(tenantId, dataSourceId, period, range),
@@ -456,9 +457,10 @@ export class DashboardService {
     period: DashboardPeriod,
     page = 1,
     pageSize = 50,
+    override?: { from?: string; to?: string },
   ): Promise<DashboardCustomersResponse> {
     const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
-    const range = this.resolveRange(period);
+    const range = this.resolveRange(period, override);
     const safePage = Math.max(1, page);
     const safePageSize = Math.min(200, Math.max(1, pageSize));
     const offset = (safePage - 1) * safePageSize;
@@ -582,9 +584,10 @@ export class DashboardService {
     partnerId: number,
     period: DashboardPeriod,
     limit = 200,
+    override?: { from?: string; to?: string },
   ): Promise<DashboardCustomerItemsResponse> {
     const dataSourceId = await this.resolver.resolve(tenantId, sourceIdOverride);
-    const range = this.resolveRange(period);
+    const range = this.resolveRange(period, override);
     const safeLimit = Math.min(500, Math.max(1, limit));
 
     const isSale = saleDocPredicateSql('d');
@@ -824,15 +827,36 @@ export class DashboardService {
     };
   }
 
-  private resolveRange(period: DashboardPeriod): PeriodRange {
+  private resolveRange(
+    period: DashboardPeriod,
+    override?: { from?: string; to?: string },
+  ): PeriodRange {
     const now = new Date();
+    const startOfDay = (d: Date) =>
+      new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+    if (override?.from || override?.to || period === 'custom') {
+      const fromIso = override?.from;
+      const toIso = override?.to;
+      const from = fromIso ? new Date(fromIso) : startOfDay(now);
+      const to = toIso ? new Date(toIso) : now;
+      if (isNaN(from.getTime()) || isNaN(to.getTime()) || from >= to) {
+        return { from: startOfDay(now), to: now, prevFrom: null, prevTo: null, bucket: 'day' };
+      }
+      const lenMs = to.getTime() - from.getTime();
+      const days = lenMs / 86_400_000;
+      const bucket: 'hour' | 'day' | 'week' | 'month' =
+        days <= 2 ? 'hour' : days <= 60 ? 'day' : days <= 365 ? 'week' : 'month';
+      const prevTo = from;
+      const prevFrom = new Date(from.getTime() - lenMs);
+      return { from, to, prevFrom, prevTo, bucket };
+    }
+
     const to = now;
     let from: Date;
     let prevFrom: Date | null = null;
     let prevTo: Date | null = null;
     let bucket: 'hour' | 'day' | 'week' | 'month' = 'day';
-    const startOfDay = (d: Date) =>
-      new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
     switch (period) {
       case 'today': {

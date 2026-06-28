@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -26,16 +26,62 @@ const PERIODS: Array<{ value: DashboardPeriod; label: string }> = [
   { value: 'quarter', label: 'Квартал' },
   { value: 'year', label: 'Рік' },
   { value: 'all', label: 'Весь час' },
+  { value: 'custom', label: 'Свій період' },
 ];
+
+function toIsoDay(date: string, end: boolean): string {
+  // Local YYYY-MM-DD → ISO at 00:00 (start) or next-day 00:00 (end exclusive)
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y || !m || !d) return new Date().toISOString();
+  const dt = new Date(Date.UTC(y, m - 1, d + (end ? 1 : 0)));
+  return dt.toISOString();
+}
+
+function todayLocal(): string {
+  const n = new Date();
+  const m = String(n.getMonth() + 1).padStart(2, '0');
+  const d = String(n.getDate()).padStart(2, '0');
+  return `${n.getFullYear()}-${m}-${d}`;
+}
+
+function monthBounds(monthValue: string): { from: string; to: string } {
+  // monthValue: "YYYY-MM"
+  const [y, m] = monthValue.split('-').map(Number);
+  if (!y || !m) {
+    const t = todayLocal();
+    return { from: t, to: t };
+  }
+  const fromDate = new Date(Date.UTC(y, m - 1, 1));
+  const toDate = new Date(Date.UTC(y, m, 0)); // last day of month
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    from: `${fromDate.getUTCFullYear()}-${pad(fromDate.getUTCMonth() + 1)}-${pad(fromDate.getUTCDate())}`,
+    to: `${toDate.getUTCFullYear()}-${pad(toDate.getUTCMonth() + 1)}-${pad(toDate.getUTCDate())}`,
+  };
+}
 
 export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const [period, setPeriod] = useState<DashboardPeriod>('month');
   const [customersModalOpen, setCustomersModalOpen] = useState(false);
 
+  const today = todayLocal();
+  const defaultMonth = today.slice(0, 7);
+  const defaultMonthBounds = monthBounds(defaultMonth);
+  const [monthValue, setMonthValue] = useState<string>(defaultMonth);
+  const [customFrom, setCustomFrom] = useState<string>(defaultMonthBounds.from);
+  const [customTo, setCustomTo] = useState<string>(defaultMonthBounds.to);
+
+  const range = useMemo(() => {
+    if (period !== 'custom') return undefined;
+    if (!customFrom || !customTo) return undefined;
+    return { from: toIsoDay(customFrom, false), to: toIsoDay(customTo, true) };
+  }, [period, customFrom, customTo]);
+  const rangeKey = `${range?.from ?? ''}|${range?.to ?? ''}`;
+
   const q = useQuery({
-    queryKey: ['dashboard-overview', period],
-    queryFn: () => dashboardApi.overview(period),
+    queryKey: ['dashboard-overview', period, rangeKey],
+    queryFn: () => dashboardApi.overview(period, range),
     refetchOnWindowFocus: false,
   });
 
@@ -62,7 +108,14 @@ export function DashboardPage() {
             {PERIODS.map((p) => (
               <button
                 key={p.value}
-                onClick={() => setPeriod(p.value)}
+                onClick={() => {
+                  setPeriod(p.value);
+                  if (p.value === 'custom') {
+                    const b = monthBounds(monthValue);
+                    setCustomFrom(b.from);
+                    setCustomTo(b.to);
+                  }
+                }}
                 className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                   period === p.value
                     ? 'bg-white text-base-content shadow-sm'
@@ -75,6 +128,47 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Custom-period controls */}
+      {period === 'custom' && (
+        <div className="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-3 md:flex-row md:items-center md:gap-3 md:p-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-base-content/50">Місяць</span>
+            <input
+              type="month"
+              value={monthValue}
+              max={today.slice(0, 7)}
+              onChange={(e) => {
+                setMonthValue(e.target.value);
+                const b = monthBounds(e.target.value);
+                setCustomFrom(b.from);
+                setCustomTo(b.to);
+              }}
+              className="h-9 rounded-lg border border-base-200 bg-white px-2 text-sm tabular-nums focus:border-primary focus:outline-none"
+            />
+          </div>
+          <div className="hidden h-6 w-px bg-base-200 md:block" />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-base-content/50">Діапазон</span>
+            <input
+              type="date"
+              value={customFrom}
+              max={customTo || today}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="h-9 rounded-lg border border-base-200 bg-white px-2 text-sm tabular-nums focus:border-primary focus:outline-none"
+            />
+            <span className="text-xs text-base-content/40">—</span>
+            <input
+              type="date"
+              value={customTo}
+              min={customFrom}
+              max={today}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="h-9 rounded-lg border border-base-200 bg-white px-2 text-sm tabular-nums focus:border-primary focus:outline-none"
+            />
+          </div>
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -315,6 +409,7 @@ export function DashboardPage() {
         open={customersModalOpen}
         period={period}
         periodLabel={PERIODS.find((p) => p.value === period)?.label ?? ''}
+        range={range}
         onClose={() => setCustomersModalOpen(false)}
       />
     </div>

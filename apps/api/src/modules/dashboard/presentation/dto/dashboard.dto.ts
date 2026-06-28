@@ -1,8 +1,8 @@
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { DashboardPeriod } from '@unipro-crm/shared-types';
 
-const PERIODS: DashboardPeriod[] = ['today', 'week', 'month', 'quarter', 'year', 'all'];
+const PERIODS: DashboardPeriod[] = ['today', 'week', 'month', 'quarter', 'year', 'all', 'custom'];
 
 export class DashboardOverviewQueryDto {
   @IsOptional()
@@ -12,6 +12,14 @@ export class DashboardOverviewQueryDto {
   @IsOptional()
   @IsString()
   sourceId?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
 }
 
 export class DashboardCustomersQueryDto {
@@ -22,6 +30,14 @@ export class DashboardCustomersQueryDto {
   @IsOptional()
   @IsString()
   sourceId?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
 
   @IsOptional()
   @Type(() => Number)
@@ -45,6 +61,14 @@ export class DashboardCustomerItemsQueryDto {
   @IsOptional()
   @IsString()
   sourceId?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
 
   @IsOptional()
   @Type(() => Number)

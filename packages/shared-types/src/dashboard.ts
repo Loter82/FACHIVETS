@@ -1,4 +1,10 @@
-export type DashboardPeriod = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'all';
+export type DashboardPeriod = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'all' | 'custom';
+
+/** Опціональний явний діапазон. Якщо передано — він перекриває пресет `period`. */
+export interface DashboardRangeOverride {
+  from?: string;
+  to?: string;
+}
 
 export interface DashboardKpiDto {
   period: DashboardPeriod;

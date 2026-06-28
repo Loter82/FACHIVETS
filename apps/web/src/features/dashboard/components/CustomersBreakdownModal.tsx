@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, X } from 'lucide-react';
-import type { DashboardPeriod } from '@unipro-crm/shared-types';
+import type { DashboardPeriod, DashboardRangeOverride } from '@unipro-crm/shared-types';
 import { dashboardApi } from '../api';
 import { fmt } from '@/shared/lib/format';
 
@@ -10,6 +10,7 @@ interface Props {
   open: boolean;
   period: DashboardPeriod;
   periodLabel: string;
+  range?: DashboardRangeOverride;
   onClose: () => void;
 }
 
@@ -21,9 +22,10 @@ interface Selected {
 
 const PAGE_SIZE = 50;
 
-export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: Props) {
+export function CustomersBreakdownModal({ open, period, periodLabel, range, onClose }: Props) {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Selected | null>(null);
+  const rangeKey = `${range?.from ?? ''}|${range?.to ?? ''}`;
 
   // Reset state when modal closes or period changes
   useEffect(() => {
@@ -35,19 +37,19 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
   useEffect(() => {
     setPage(1);
     setSelected(null);
-  }, [period]);
+  }, [period, rangeKey]);
 
   const listQ = useQuery({
-    queryKey: ['dashboard-customers', period, page],
-    queryFn: () => dashboardApi.customers(period, page, PAGE_SIZE),
+    queryKey: ['dashboard-customers', period, rangeKey, page],
+    queryFn: () => dashboardApi.customers(period, page, PAGE_SIZE, range),
     enabled: open && !selected,
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
 
   const itemsQ = useQuery({
-    queryKey: ['dashboard-customer-items', selected?.partnerId, period],
-    queryFn: () => dashboardApi.customerItems(selected!.partnerId, period),
+    queryKey: ['dashboard-customer-items', selected?.partnerId, period, rangeKey],
+    queryFn: () => dashboardApi.customerItems(selected!.partnerId, period, 200, range),
     enabled: open && selected !== null,
     refetchOnWindowFocus: false,
   });

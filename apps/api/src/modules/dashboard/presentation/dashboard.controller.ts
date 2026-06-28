@@ -22,7 +22,10 @@ export class DashboardController {
   @Roles('OWNER', 'ADMIN', 'MANAGER', 'VIEWER')
   @Get('overview')
   overview(@CurrentUser() user: JwtPayload, @Query() q: DashboardOverviewQueryDto) {
-    return this.dashboard.overview(user.tenantId, q.sourceId, q.period ?? 'month');
+    return this.dashboard.overview(user.tenantId, q.sourceId, q.period ?? 'month', {
+      from: q.from,
+      to: q.to,
+    });
   }
 
   @Roles('OWNER', 'ADMIN', 'MANAGER', 'VIEWER')
@@ -34,6 +37,7 @@ export class DashboardController {
       q.period ?? 'month',
       q.page ?? 1,
       q.pageSize ?? 50,
+      { from: q.from, to: q.to },
     );
   }
 
@@ -50,6 +54,7 @@ export class DashboardController {
       partnerId,
       q.period ?? 'month',
       q.limit ?? 200,
+      { from: q.from, to: q.to },
     );
   }
 
