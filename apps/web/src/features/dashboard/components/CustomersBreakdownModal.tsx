@@ -195,6 +195,12 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
                 <div className="text-sm font-semibold tabular-nums text-primary">
                   {fmt.money(c.netRevenue)}
                 </div>
+                <div className="text-[10px] text-emerald-600 tabular-nums">
+                  +{fmt.money(c.grossProfit)}
+                  {c.marginPct !== null && (
+                    <span className="ml-1 text-base-content/40">({c.marginPct.toFixed(1)}%)</span>
+                  )}
+                </div>
                 {c.returnsSum > 0 && (
                   <div className="text-[10px] text-base-content/40">
                     поверн.: {fmt.money(c.returnsSum)}
@@ -214,6 +220,8 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
               <th className="bg-transparent">Картка</th>
               <th className="bg-transparent text-right">Чеків</th>
               <th className="bg-transparent text-right">Виторг</th>
+              <th className="bg-transparent text-right">Прибуток</th>
+              <th className="bg-transparent text-right">Маржа</th>
               <th className="bg-transparent">Остання покупка</th>
             </tr>
           </thead>
@@ -246,6 +254,12 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
                     повернень: {fmt.money(c.returnsSum)}
                   </div>
                 )}
+              </td>
+              <td className="text-right tabular-nums text-sm font-semibold text-emerald-600">
+                {fmt.money(c.grossProfit)}
+              </td>
+              <td className="text-right tabular-nums text-xs text-base-content/60">
+                {c.marginPct !== null ? c.marginPct.toFixed(1) + '%' : '—'}
               </td>
               <td className="text-xs text-base-content/60">{fmt.date(c.lastPurchaseAt)}</td>
             </tr>
@@ -280,8 +294,13 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
     }
     return (
       <>
-        <div className="grid grid-cols-3 gap-2 border-b border-base-200 bg-base-200/30 px-4 py-3 sm:gap-3 sm:px-5 sm:py-4">
+        <div className="grid grid-cols-2 gap-2 border-b border-base-200 bg-base-200/30 px-4 py-3 sm:grid-cols-4 sm:gap-3 sm:px-5 sm:py-4">
           <Stat label="Сума" value={fmt.money(itemsQ.data.totalRevenue)} />
+          <Stat
+            label="Прибуток"
+            value={fmt.money(itemsQ.data.totalGrossProfit)}
+            sublabel={itemsQ.data.totalMarginPct !== null ? itemsQ.data.totalMarginPct.toFixed(1) + '%' : undefined}
+          />
           <Stat label="Кількість" value={fmt.num(itemsQ.data.totalQtty, 2)} />
           <Stat label="Позицій" value={fmt.num(itemsQ.data.items.length)} />
         </div>
@@ -297,10 +316,16 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
                   <span className="font-mono">{it.code ?? '—'}</span>
                   <span>{fmt.num(it.qtty, 2)} шт.</span>
                   <span>{fmt.num(it.ordersCount)} чеків</span>
+                  <span className="text-base-content/40">
+                    маржа {it.marginPct !== null ? it.marginPct.toFixed(1) + '%' : '—'}
+                  </span>
                 </div>
               </div>
-              <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                {fmt.money(it.revenue)}
+              <div className="shrink-0 text-right">
+                <div className="text-sm font-semibold tabular-nums">{fmt.money(it.revenue)}</div>
+                <div className="text-[10px] text-emerald-600 tabular-nums">
+                  +{fmt.money(it.grossProfit)}
+                </div>
               </div>
             </li>
           ))}
@@ -316,6 +341,8 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
               <th className="bg-transparent text-right">К-сть</th>
               <th className="bg-transparent text-right">Чеків</th>
               <th className="bg-transparent text-right">Сума</th>
+              <th className="bg-transparent text-right">Прибуток</th>
+              <th className="bg-transparent text-right">Маржа</th>
             </tr>
           </thead>
           <tbody>
@@ -331,6 +358,12 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
                 <td className="text-right tabular-nums text-sm font-semibold">
                   {fmt.money(it.revenue)}
                 </td>
+                <td className="text-right tabular-nums text-sm font-semibold text-emerald-600">
+                  {fmt.money(it.grossProfit)}
+                </td>
+                <td className="text-right tabular-nums text-xs text-base-content/60">
+                  {it.marginPct !== null ? it.marginPct.toFixed(1) + '%' : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -340,11 +373,14 @@ export function CustomersBreakdownModal({ open, period, periodLabel, onClose }: 
   }
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-base-content/40">{label}</div>
       <div className="mt-0.5 text-sm font-bold tabular-nums sm:text-lg">{value}</div>
+      {sublabel && (
+        <div className="text-[10px] text-base-content/50 tabular-nums">{sublabel}</div>
+      )}
     </div>
   );
 }

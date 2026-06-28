@@ -124,12 +124,27 @@ export function CustomerProfilePage() {
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="Виторг (нетто)" value={fmt.money(s.netRevenue)} hint={s.returnsSum > 0 ? `з ${fmt.money(s.salesSum)}` : undefined} />
+        <Kpi
+          label="Прибуток"
+          value={fmt.money(s.grossProfit)}
+          hint={`собівартість ${fmt.money(s.cogs)}${s.marginPct !== null ? ` · маржа ${s.marginPct.toFixed(1)}%` : ''}`}
+          accent="emerald"
+        />
         <Kpi label="Чеків" value={fmt.num(s.ordersCount)} hint={`в ${s.uniqueStores} магазині`} />
-        <Kpi label="Середній чек" value={s.ordersCount > 0 ? fmt.money(s.avgOrderValue, 2) : '—'} />
         <Kpi
           label="Остання покупка"
           value={s.lastPurchaseAt ? fmt.date(s.lastPurchaseAt) : '—'}
           hint={fmt.relativeDays(s.daysSinceLastPurchase)}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Kpi label="Середній чек" value={s.ordersCount > 0 ? fmt.money(s.avgOrderValue, 2) : '—'} />
+        <Kpi label="Собівартість" value={fmt.money(s.cogs)} />
+        <Kpi label="Повернень" value={fmt.money(s.returnsSum)} />
+        <Kpi
+          label="Маржинальність"
+          value={s.marginPct !== null ? s.marginPct.toFixed(1) + '%' : '—'}
         />
       </div>
 
@@ -253,11 +268,17 @@ export function CustomerProfilePage() {
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Kpi({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: 'emerald' }) {
   return (
     <div className="card-elevated p-4 md:p-5">
       <div className="mb-1.5 text-[11px] font-medium text-base-content/50 md:mb-2 md:text-xs">{label}</div>
-      <div className="text-lg font-bold tabular-nums tracking-tight md:text-2xl">{value}</div>
+      <div
+        className={`text-lg font-bold tabular-nums tracking-tight md:text-2xl ${
+          accent === 'emerald' ? 'text-emerald-600' : ''
+        }`}
+      >
+        {value}
+      </div>
       {hint && <div className="mt-1 text-[11px] text-base-content/40 md:text-xs">{hint}</div>}
     </div>
   );

@@ -23,6 +23,7 @@ interface AggRow {
   orders_count: bigint;
   sales_sum: number | string | null;
   returns_sum: number | string | null;
+  cogs: number | string | null;
   first_at: Date | null;
   last_at: Date | null;
   unique_stores: bigint;
@@ -40,6 +41,7 @@ interface ListRow {
   orders_count: bigint | null;
   sales_sum: number | string | null;
   returns_sum: number | string | null;
+  cogs: number | string | null;
   first_at: Date | null;
   last_at: Date | null;
 }
@@ -85,12 +87,25 @@ export class CustomersService {
       : Prisma.empty;
 
     const rows = await this.prisma.$queryRaw<ListRow[]>(Prisma.sql`
-      WITH agg AS (
+      WITH doc_cogs AS (
+        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND ${isSale}
+        GROUP BY d."externalId"
+      ),
+      agg AS (
         SELECT
           p.id AS partner_pk,
           COUNT(d.id) FILTER (WHERE ${isSale}) AS orders_count,
           COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum,
           COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+          COALESCE(SUM(dc.cogs) FILTER (WHERE ${isSale}), 0) AS cogs,
           MIN(d."dateTime") FILTER (WHERE ${isSale}) AS first_at,
           MAX(d."dateTime") FILTER (WHERE ${isSale}) AS last_at
         FROM mirror_partners p
@@ -98,6 +113,7 @@ export class CustomersService {
           ON d."tenantId" = p."tenantId"
           AND d."dataSourceId" = p."dataSourceId"
           AND d."partnerId" = p."externalId"
+        LEFT JOIN doc_cogs dc ON dc.ext_doc_id = d."externalId"
         ${whereSql}
         GROUP BY p.id
       )
@@ -113,6 +129,7 @@ export class CustomersService {
         a.orders_count,
         a.sales_sum,
         a.returns_sum,
+        a.cogs,
         a.first_at,
         a.last_at
       FROM agg a
@@ -267,15 +284,30 @@ export class CustomersService {
     const isReturn = returnDocPredicateSql('d');
 
     const rows = await this.prisma.$queryRaw<AggRow[]>(Prisma.sql`
+      WITH doc_cogs AS (
+        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND d."partnerId" = ${externalId}
+          AND ${isSale}
+        GROUP BY d."externalId"
+      )
       SELECT
         ${externalId}::int AS partner_id,
         COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
         COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS sales_sum,
         COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+        COALESCE(SUM(dc.cogs) FILTER (WHERE ${isSale}), 0) AS cogs,
         MIN(d."dateTime") FILTER (WHERE ${isSale}) AS first_at,
         MAX(d."dateTime") FILTER (WHERE ${isSale}) AS last_at,
         COUNT(DISTINCT d."storeId") FILTER (WHERE ${isSale}) AS unique_stores
       FROM mirror_documents d
+      LEFT JOIN doc_cogs dc ON dc.ext_doc_id = d."externalId"
       WHERE d."tenantId" = ${tenantId}
         AND d."dataSourceId" = ${dataSourceId}
         AND d."partnerId" = ${externalId}
@@ -286,6 +318,9 @@ export class CustomersService {
     const returnsSum = Number(r?.returns_sum ?? 0);
     const netRevenue = salesSum - returnsSum;
     const avgOrderValue = ordersCount > 0 ? salesSum / ordersCount : 0;
+    const cogs = Number(r?.cogs ?? 0);
+    const grossProfit = salesSum - cogs;
+    const marginPct = salesSum > 0 ? (grossProfit / salesSum) * 100 : null;
     const firstAt = r?.first_at ?? null;
     const lastAt = r?.last_at ?? null;
     const daysSinceLastPurchase =
@@ -297,6 +332,9 @@ export class CustomersService {
       returnsSum,
       netRevenue,
       avgOrderValue,
+      cogs,
+      grossProfit,
+      marginPct,
       firstPurchaseAt: firstAt ? firstAt.toISOString() : null,
       lastPurchaseAt: lastAt ? lastAt.toISOString() : null,
       daysSinceLastPurchase,
@@ -310,6 +348,9 @@ export class CustomersService {
     const returnsSum = Number(r.returns_sum ?? 0);
     const netRevenue = salesSum - returnsSum;
     const avgOrderValue = ordersCount > 0 ? salesSum / ordersCount : 0;
+    const cogs = Number(r.cogs ?? 0);
+    const grossProfit = salesSum - cogs;
+    const marginPct = salesSum > 0 ? (grossProfit / salesSum) * 100 : null;
     return {
       id: r.id,
       externalId: r.external_id,
@@ -324,6 +365,9 @@ export class CustomersService {
       returnsSum,
       netRevenue,
       avgOrderValue,
+      cogs,
+      grossProfit,
+      marginPct,
       firstPurchaseAt: r.first_at ? r.first_at.toISOString() : null,
       lastPurchaseAt: r.last_at ? r.last_at.toISOString() : null,
     };
@@ -338,6 +382,8 @@ export class CustomersService {
         return Prisma.sql`ORDER BY first_at ${dir} NULLS LAST, p.id ASC`;
       case 'ordersCount':
         return Prisma.sql`ORDER BY orders_count ${dir} NULLS LAST, p.id ASC`;
+      case 'profit':
+        return Prisma.sql`ORDER BY (sales_sum - returns_sum - cogs) ${dir} NULLS LAST, p.id ASC`;
       case 'revenue':
         return Prisma.sql`ORDER BY (sales_sum - returns_sum) ${dir} NULLS LAST, p.id ASC`;
       case 'lastPurchase':

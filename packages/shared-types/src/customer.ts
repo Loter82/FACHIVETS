@@ -13,6 +13,9 @@ export interface CustomerListItemDto {
   returnsSum: number;
   netRevenue: number;
   avgOrderValue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number | null;
   firstPurchaseAt: string | null;
   lastPurchaseAt: string | null;
 }
@@ -28,6 +31,7 @@ export type CustomerSort =
   | 'name'
   | 'lastPurchase'
   | 'revenue'
+  | 'profit'
   | 'ordersCount'
   | 'firstPurchase';
 
@@ -67,6 +71,9 @@ export interface CustomerStatsDto {
   returnsSum: number;
   netRevenue: number;
   avgOrderValue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number | null;
   firstPurchaseAt: string | null;
   lastPurchaseAt: string | null;
   daysSinceLastPurchase: number | null;

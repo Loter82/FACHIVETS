@@ -8,6 +8,7 @@ import { fmt } from '@/shared/lib/format';
 
 const SORT_OPTIONS: Array<{ value: CustomerSort; label: string }> = [
   { value: 'revenue', label: 'За виторгом' },
+  { value: 'profit', label: 'За прибутком' },
   { value: 'lastPurchase', label: 'За останньою покупкою' },
   { value: 'ordersCount', label: 'За кількістю чеків' },
   { value: 'firstPurchase', label: 'За першою покупкою' },
@@ -137,6 +138,12 @@ export function CustomersListPage() {
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="text-sm font-semibold tabular-nums">{fmt.money(c.netRevenue)}</div>
+                      <div className="text-[10px] text-emerald-600 tabular-nums">
+                        +{fmt.money(c.grossProfit)}
+                        {c.marginPct !== null && (
+                          <span className="ml-1 text-base-content/40">({c.marginPct.toFixed(1)}%)</span>
+                        )}
+                      </div>
                       <div className="text-[10px] text-base-content/40">
                         {fmt.num(c.ordersCount)} чеків
                       </div>
@@ -171,6 +178,8 @@ export function CustomersListPage() {
                   <th className="bg-transparent font-medium">Група</th>
                   <th className="bg-transparent text-right font-medium">Чеків</th>
                   <th className="bg-transparent text-right font-medium">Виторг</th>
+                  <th className="bg-transparent text-right font-medium">Прибуток</th>
+                  <th className="bg-transparent text-right font-medium">Маржа</th>
                   <th className="bg-transparent text-right font-medium">Сер. чек</th>
                   <th className="bg-transparent font-medium">Остання покупка</th>
                 </tr>
@@ -178,14 +187,14 @@ export function CustomersListPage() {
               <tbody>
                 {q.isLoading && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center">
+                    <td colSpan={9} className="py-10 text-center">
                       <span className="loading loading-spinner loading-md text-primary" />
                     </td>
                   </tr>
                 )}
                 {q.error && (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-error text-sm">
+                    <td colSpan={9} className="py-8 text-center text-error text-sm">
                       Помилка завантаження
                     </td>
                   </tr>
@@ -216,6 +225,12 @@ export function CustomersListPage() {
                     <td className="text-right tabular-nums text-sm font-semibold">
                       {fmt.money(c.netRevenue)}
                     </td>
+                    <td className="text-right tabular-nums text-sm font-semibold text-emerald-600">
+                      {fmt.money(c.grossProfit)}
+                    </td>
+                    <td className="text-right tabular-nums text-xs text-base-content/60">
+                      {c.marginPct !== null ? c.marginPct.toFixed(1) + '%' : '—'}
+                    </td>
                     <td className="text-right tabular-nums text-xs text-base-content/60">
                       {c.ordersCount > 0 ? fmt.money(c.avgOrderValue) : '—'}
                     </td>
@@ -226,7 +241,7 @@ export function CustomersListPage() {
                 ))}
                 {q.data && q.data.items.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-sm text-base-content/40">
+                    <td colSpan={9} className="py-10 text-center text-sm text-base-content/40">
                       Нічого не знайдено
                     </td>
                   </tr>

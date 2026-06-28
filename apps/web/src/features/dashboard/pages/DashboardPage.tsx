@@ -10,6 +10,7 @@ import {
   Package,
   Receipt,
   FileText,
+  Wallet,
 } from 'lucide-react';
 import type { DashboardKpiDto, DashboardPeriod } from '@unipro-crm/shared-types';
 import { dashboardApi } from '../api';
@@ -85,17 +86,27 @@ export function DashboardPage() {
           loading={q.isLoading}
         />
         <KpiCard
+          icon={<Wallet size={18} strokeWidth={1.5} className="text-emerald-500" />}
+          label="Прибуток"
+          value={fmt.money(kpi?.grossProfit ?? 0)}
+          delta={kpi ? fmt.delta(kpi.grossProfit, kpi.grossProfitPrev) : null}
+          loading={q.isLoading}
+          hint={
+            kpi
+              ? `Собівартість: ${fmt.money(kpi.cogs)} · Маржа: ${kpi.marginPct !== null ? kpi.marginPct.toFixed(1) + '%' : '—'}`
+              : undefined
+          }
+          subValue={
+            kpi && kpi.marginPct !== null
+              ? `маржа ${kpi.marginPct.toFixed(1)}%`
+              : undefined
+          }
+        />
+        <KpiCard
           icon={<ShoppingCart size={18} strokeWidth={1.5} className="text-violet-500" />}
           label="Продажів"
           value={fmt.num(kpi?.ordersCount ?? 0)}
           delta={kpi ? fmt.delta(kpi.ordersCount, kpi.ordersCountPrev) : null}
-          loading={q.isLoading}
-        />
-        <KpiCard
-          icon={<Package size={18} strokeWidth={1.5} className="text-emerald-500" />}
-          label="Середній чек"
-          value={fmt.money(kpi?.avgCheck ?? 0)}
-          delta={kpi ? fmt.delta(kpi.avgCheck, kpi.avgCheckPrev) : null}
           loading={q.isLoading}
         />
         <KpiCard
@@ -106,6 +117,39 @@ export function DashboardPage() {
           loading={q.isLoading}
           onClick={() => setCustomersModalOpen(true)}
           hint="Натисніть, щоб бачити хто і на яку суму"
+        />
+      </div>
+
+      {/* Secondary KPI row — сер. чек, собівартість, повернення */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <KpiCard
+          icon={<Package size={18} strokeWidth={1.5} className="text-sky-500" />}
+          label="Середній чек"
+          value={fmt.money(kpi?.avgCheck ?? 0)}
+          delta={kpi ? fmt.delta(kpi.avgCheck, kpi.avgCheckPrev) : null}
+          loading={q.isLoading}
+        />
+        <KpiCard
+          icon={<Receipt size={18} strokeWidth={1.5} className="text-rose-500" />}
+          label="Собівартість"
+          value={fmt.money(kpi?.cogs ?? 0)}
+          delta={kpi ? fmt.delta(kpi.cogs, kpi.cogsPrev) : null}
+          loading={q.isLoading}
+          hint="Собівартість реалізованих товарів (qtty × priceIn)"
+        />
+        <KpiCard
+          icon={<FileText size={18} strokeWidth={1.5} className="text-orange-500" />}
+          label="Повернення"
+          value={fmt.money(kpi?.returnsSum ?? 0)}
+          delta={null}
+          loading={q.isLoading}
+        />
+        <KpiCard
+          icon={<Package size={18} strokeWidth={1.5} className="text-cyan-500" />}
+          label="Продано одиниць"
+          value={fmt.num(kpi?.itemsSold ?? 0)}
+          delta={null}
+          loading={q.isLoading}
         />
       </div>
 
@@ -162,7 +206,10 @@ export function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-xs font-medium">{c.displayName}</div>
                     <div className="text-[10px] text-base-content/40">
-                      {fmt.num(c.ordersCount)} прод.
+                      {fmt.num(c.ordersCount)} прод. · прибуток {fmt.money(c.grossProfit)}
+                      {c.marginPct !== null && (
+                        <span className="ml-1">({c.marginPct.toFixed(1)}%)</span>
+                      )}
                     </div>
                   </div>
                   <div className="shrink-0 text-right text-xs font-semibold tabular-nums">
@@ -199,11 +246,12 @@ export function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{p.name ?? `Товар #${p.goodId}`}</div>
                     <div className="truncate font-mono text-[10px] text-base-content/40">
-                      {p.code ?? '—'} · {fmt.num(p.qtty, 2)} шт.
+                      {p.code ?? '—'} · {fmt.num(p.qtty, 2)} шт. · маржа {p.marginPct !== null ? p.marginPct.toFixed(1) + '%' : '—'}
                     </div>
                   </div>
-                  <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                    {fmt.money(p.revenue)}
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-semibold tabular-nums">{fmt.money(p.revenue)}</div>
+                    <div className="text-[10px] text-emerald-600 tabular-nums">+{fmt.money(p.grossProfit)}</div>
                   </div>
                 </li>
               ))}
@@ -221,12 +269,14 @@ export function DashboardPage() {
                 <th className="bg-transparent font-mono">Код</th>
                 <th className="bg-transparent text-right">Кількість</th>
                 <th className="bg-transparent text-right">Виторг</th>
+                <th className="bg-transparent text-right">Прибуток</th>
+                <th className="bg-transparent text-right">Маржа</th>
               </tr>
             </thead>
             <tbody>
               {q.isLoading && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center">
+                  <td colSpan={7} className="py-8 text-center">
                     <span className="loading loading-spinner text-primary" />
                   </td>
                 </tr>
@@ -241,11 +291,17 @@ export function DashboardPage() {
                     <td className="text-right tabular-nums text-sm font-semibold">
                       {fmt.money(p.revenue)}
                     </td>
+                    <td className="text-right tabular-nums text-sm font-semibold text-emerald-600">
+                      {fmt.money(p.grossProfit)}
+                    </td>
+                    <td className="text-right tabular-nums text-xs text-base-content/60">
+                      {p.marginPct !== null ? p.marginPct.toFixed(1) + '%' : '—'}
+                    </td>
                   </tr>
                 ))}
               {!q.isLoading && topProducts.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-sm text-base-content/40">
+                  <td colSpan={7} className="py-8 text-center text-sm text-base-content/40">
                     Немає даних
                   </td>
                 </tr>
@@ -273,6 +329,7 @@ function KpiCard({
   loading,
   onClick,
   hint,
+  subValue,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -281,6 +338,7 @@ function KpiCard({
   loading: boolean;
   onClick?: () => void;
   hint?: string;
+  subValue?: string;
 }) {
   const clickable = !!onClick;
   const Wrapper: React.ElementType = clickable ? 'button' : 'div';
@@ -305,6 +363,9 @@ function KpiCard({
         <div className="skeleton h-6 w-20 rounded-lg md:h-7 md:w-28" />
       ) : (
         <div className="text-lg font-bold tabular-nums tracking-tight md:text-2xl">{value}</div>
+      )}
+      {subValue && !loading && (
+        <div className="mt-0.5 text-[11px] text-base-content/50 md:text-xs">{subValue}</div>
       )}
       {delta && !loading && (
         <div

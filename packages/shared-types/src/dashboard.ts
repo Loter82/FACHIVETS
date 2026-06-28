@@ -15,11 +15,20 @@ export interface DashboardKpiDto {
   retailOrders: number;
   wholesaleRevenue: number;
   wholesaleOrders: number;
+  /// Собівартість реалізованих товарів за період (SUM(qtty*priceIn) по продажах).
+  cogs: number;
+  /// Валовий прибуток (revenue - cogs).
+  grossProfit: number;
+  /// Маржинальність у % (grossProfit / revenue * 100). null, якщо revenue=0.
+  marginPct: number | null;
   /// Виторг попереднього періоду тієї ж тривалості (для дельти). null = немає бази.
   revenuePrev: number | null;
   ordersCountPrev: number | null;
   avgCheckPrev: number | null;
   uniqueCustomersPrev: number | null;
+  cogsPrev: number | null;
+  grossProfitPrev: number | null;
+  marginPctPrev: number | null;
 }
 
 export interface RevenueTimelinePoint {
@@ -42,6 +51,9 @@ export interface TopCustomerDto {
   cardNumber: string | null;
   ordersCount: number;
   revenue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number | null;
 }
 
 export interface TopProductDto {
@@ -50,6 +62,9 @@ export interface TopProductDto {
   code: string | null;
   qtty: number;
   revenue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number | null;
 }
 
 export interface DashboardOverviewDto {
@@ -70,6 +85,9 @@ export interface DashboardCustomerRow {
   revenue: number;
   returnsSum: number;
   netRevenue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number | null;
   lastPurchaseAt: string | null;
 }
 
@@ -90,6 +108,9 @@ export interface DashboardCustomerItem {
   code: string | null;
   qtty: number;
   revenue: number;
+  cogs: number;
+  grossProfit: number;
+  marginPct: number | null;
   /// Скільки документів містили цей товар.
   ordersCount: number;
 }
@@ -103,5 +124,8 @@ export interface DashboardCustomerItemsResponse {
   displayName: string;
   totalRevenue: number;
   totalQtty: number;
+  totalCogs: number;
+  totalGrossProfit: number;
+  totalMarginPct: number | null;
   items: DashboardCustomerItem[];
 }

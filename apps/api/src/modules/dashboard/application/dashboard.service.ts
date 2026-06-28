@@ -42,6 +42,11 @@ interface KpiRow {
   wholesale_orders: bigint;
 }
 
+interface KpiItemsRow {
+  items_sold: number | string | null;
+  cogs: number | string | null;
+}
+
 interface TimelineRow {
   bucket_date: Date;
   revenue: number | string | null;
@@ -54,6 +59,7 @@ interface TopCustomerRow {
   card_number: string | null;
   orders_count: bigint;
   revenue: number | string | null;
+  cogs: number | string | null;
 }
 
 interface TopProductRow {
@@ -62,6 +68,7 @@ interface TopProductRow {
   code: string | null;
   qtty: number | string | null;
   revenue: number | string | null;
+  cogs: number | string | null;
 }
 
 @Injectable()
@@ -120,8 +127,10 @@ export class DashboardService {
           AND d."dataSourceId" = ${dataSourceId}
           ${dateFilter}
       `),
-      this.prisma.$queryRaw<{ items_sold: number | string | null }[]>(Prisma.sql`
-        SELECT COALESCE(SUM(i.qtty), 0) AS items_sold
+      this.prisma.$queryRaw<KpiItemsRow[]>(Prisma.sql`
+        SELECT
+          COALESCE(SUM(i.qtty), 0) AS items_sold,
+          COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs
         FROM mirror_document_items i
         JOIN mirror_documents d
           ON d."tenantId" = i."tenantId"
@@ -135,10 +144,13 @@ export class DashboardService {
     ]);
     const cur = rows[0];
     const itemsSoldRaw = itemsRows[0]?.items_sold ?? 0;
+    const cogsRaw = itemsRows[0]?.cogs ?? 0;
 
     let prev: KpiRow | null = null;
+    let prevCogsRaw: number | string | null = null;
     if (r.prevFrom && r.prevTo) {
-      const prevRows = await this.prisma.$queryRaw<KpiRow[]>(Prisma.sql`
+      const [prevRows, prevItemsRows] = await Promise.all([
+        this.prisma.$queryRaw<KpiRow[]>(Prisma.sql`
         SELECT
           COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS revenue,
           COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
@@ -154,8 +166,23 @@ export class DashboardService {
           AND d."dataSourceId" = ${dataSourceId}
           AND d."dateTime" >= ${r.prevFrom}
           AND d."dateTime" < ${r.prevTo}
-      `);
+      `),
+        this.prisma.$queryRaw<{ cogs: number | string | null }[]>(Prisma.sql`
+          SELECT COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs
+          FROM mirror_document_items i
+          JOIN mirror_documents d
+            ON d."tenantId" = i."tenantId"
+            AND d."dataSourceId" = i."dataSourceId"
+            AND d."externalId" = i."externalDocId"
+          WHERE i."tenantId" = ${tenantId}
+            AND i."dataSourceId" = ${dataSourceId}
+            AND ${isSale}
+            AND d."dateTime" >= ${r.prevFrom}
+            AND d."dateTime" < ${r.prevTo}
+        `),
+      ]);
       prev = prevRows[0] ?? null;
+      prevCogsRaw = prevItemsRows[0]?.cogs ?? 0;
     }
 
     const revenue = Number(cur?.revenue ?? 0);
@@ -164,11 +191,20 @@ export class DashboardService {
     const uniqueCustomers = Number(cur?.unique_customers ?? 0);
     const itemsSold = Number(itemsSoldRaw);
     const returnsSum = Number(cur?.returns_sum ?? 0);
+    const cogs = Number(cogsRaw);
+    const grossProfit = revenue - cogs;
+    const marginPct = revenue > 0 ? (grossProfit / revenue) * 100 : null;
 
     const prevRevenue = prev ? Number(prev.revenue ?? 0) : null;
     const prevOrders = prev ? Number(prev.orders_count ?? 0) : null;
     const prevAvg = prev && prevOrders! > 0 ? prevRevenue! / prevOrders! : prev ? 0 : null;
     const prevUnique = prev ? Number(prev.unique_customers ?? 0) : null;
+    const prevCogs = prev ? Number(prevCogsRaw ?? 0) : null;
+    const prevGrossProfit = prev ? (prevRevenue ?? 0) - (prevCogs ?? 0) : null;
+    const prevMarginPct =
+      prev && prevRevenue && prevRevenue > 0
+        ? ((prevGrossProfit ?? 0) / prevRevenue) * 100
+        : null;
 
     return {
       period,
@@ -184,10 +220,16 @@ export class DashboardService {
       retailOrders: Number(cur?.retail_orders ?? 0),
       wholesaleRevenue: Number(cur?.wholesale_revenue ?? 0),
       wholesaleOrders: Number(cur?.wholesale_orders ?? 0),
+      cogs,
+      grossProfit,
+      marginPct,
       revenuePrev: prevRevenue,
       ordersCountPrev: prevOrders,
       avgCheckPrev: prevAvg,
       uniqueCustomersPrev: prevUnique,
+      cogsPrev: prevCogs,
+      grossProfitPrev: prevGrossProfit,
+      marginPctPrev: prevMarginPct,
     };
   }
 
@@ -288,17 +330,32 @@ export class DashboardService {
       : Prisma.empty;
 
     const rows = await this.prisma.$queryRaw<TopCustomerRow[]>(Prisma.sql`
+      WITH doc_cogs AS (
+        SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+        FROM mirror_document_items i
+        JOIN mirror_documents d
+          ON d."tenantId" = i."tenantId"
+          AND d."dataSourceId" = i."dataSourceId"
+          AND d."externalId" = i."externalDocId"
+        WHERE i."tenantId" = ${tenantId}
+          AND i."dataSourceId" = ${dataSourceId}
+          AND ${isSale}
+          ${dateFilter}
+        GROUP BY d."externalId"
+      )
       SELECT
         d."partnerId" AS partner_id,
         p."displayName" AS display_name,
         p."cardNumber" AS card_number,
         COUNT(*) AS orders_count,
-        COALESCE(SUM(d."docSum"), 0) AS revenue
+        COALESCE(SUM(d."docSum"), 0) AS revenue,
+        COALESCE(SUM(dc.cogs), 0) AS cogs
       FROM mirror_documents d
       LEFT JOIN mirror_partners p
         ON p."tenantId" = d."tenantId"
         AND p."dataSourceId" = d."dataSourceId"
         AND p."externalId" = d."partnerId"
+      LEFT JOIN doc_cogs dc ON dc.ext_doc_id = d."externalId"
       WHERE d."tenantId" = ${tenantId}
         AND d."dataSourceId" = ${dataSourceId}
         AND ${isSale}
@@ -310,13 +367,21 @@ export class DashboardService {
       LIMIT ${limit}
     `);
 
-    return rows.map((r) => ({
-      partnerId: r.partner_id,
-      displayName: r.display_name ?? `Партнер #${r.partner_id}`,
-      cardNumber: r.card_number,
-      ordersCount: Number(r.orders_count ?? 0),
-      revenue: Number(r.revenue ?? 0),
-    }));
+    return rows.map((r) => {
+      const revenue = Number(r.revenue ?? 0);
+      const cogs = Number(r.cogs ?? 0);
+      const grossProfit = revenue - cogs;
+      return {
+        partnerId: r.partner_id,
+        displayName: r.display_name ?? `Партнер #${r.partner_id}`,
+        cardNumber: r.card_number,
+        ordersCount: Number(r.orders_count ?? 0),
+        revenue,
+        cogs,
+        grossProfit,
+        marginPct: revenue > 0 ? (grossProfit / revenue) * 100 : null,
+      };
+    });
   }
 
   async topProducts(
@@ -336,7 +401,8 @@ export class DashboardService {
         g.name AS name,
         g.code AS code,
         COALESCE(SUM(i.qtty), 0) AS qtty,
-        COALESCE(SUM(i.sum), 0) AS revenue
+        COALESCE(SUM(i.sum), 0) AS revenue,
+        COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs
       FROM mirror_document_items i
       JOIN mirror_documents d
         ON d."tenantId" = i."tenantId"
@@ -355,13 +421,21 @@ export class DashboardService {
       LIMIT ${limit}
     `);
 
-    return rows.map((r) => ({
-      goodId: Number(r.good_id),
-      name: r.name,
-      code: r.code,
-      qtty: Number(r.qtty ?? 0),
-      revenue: Number(r.revenue ?? 0),
-    }));
+    return rows.map((r) => {
+      const revenue = Number(r.revenue ?? 0);
+      const cogs = Number(r.cogs ?? 0);
+      const grossProfit = revenue - cogs;
+      return {
+        goodId: Number(r.good_id),
+        name: r.name,
+        code: r.code,
+        qtty: Number(r.qtty ?? 0),
+        revenue,
+        cogs,
+        grossProfit,
+        marginPct: revenue > 0 ? (grossProfit / revenue) * 100 : null,
+      };
+    });
   }
 
   async customersBreakdown(
@@ -391,6 +465,7 @@ export class DashboardService {
       orders_count: bigint;
       revenue: number | string | null;
       returns_sum: number | string | null;
+      cogs: number | string | null;
       last_purchase_at: Date | null;
     }
     interface CountRow {
@@ -399,6 +474,19 @@ export class DashboardService {
 
     const [rows, totalRows] = await Promise.all([
       this.prisma.$queryRaw<Row[]>(Prisma.sql`
+        WITH doc_cogs AS (
+          SELECT d."externalId" AS ext_doc_id, SUM(i.qtty * i."priceIn") AS cogs
+          FROM mirror_document_items i
+          JOIN mirror_documents d
+            ON d."tenantId" = i."tenantId"
+            AND d."dataSourceId" = i."dataSourceId"
+            AND d."externalId" = i."externalDocId"
+          WHERE i."tenantId" = ${tenantId}
+            AND i."dataSourceId" = ${dataSourceId}
+            AND ${isSale}
+            ${dateFilter}
+          GROUP BY d."externalId"
+        )
         SELECT
           d."partnerId" AS partner_id,
           p.id AS customer_id,
@@ -407,12 +495,14 @@ export class DashboardService {
           COUNT(*) FILTER (WHERE ${isSale}) AS orders_count,
           COALESCE(SUM(d."docSum") FILTER (WHERE ${isSale}), 0) AS revenue,
           COALESCE(SUM(d."docSum") FILTER (WHERE ${isReturn}), 0) AS returns_sum,
+          COALESCE(SUM(dc.cogs) FILTER (WHERE ${isSale}), 0) AS cogs,
           MAX(d."dateTime") FILTER (WHERE ${isSale}) AS last_purchase_at
         FROM mirror_documents d
         LEFT JOIN mirror_partners p
           ON p."tenantId" = d."tenantId"
           AND p."dataSourceId" = d."dataSourceId"
           AND p."externalId" = d."partnerId"
+        LEFT JOIN doc_cogs dc ON dc.ext_doc_id = d."externalId"
         WHERE d."tenantId" = ${tenantId}
           AND d."dataSourceId" = ${dataSourceId}
           AND d."partnerId" IS NOT NULL
@@ -441,6 +531,8 @@ export class DashboardService {
     const items: DashboardCustomerRow[] = rows.map((r) => {
       const revenue = Number(r.revenue ?? 0);
       const returnsSum = Number(r.returns_sum ?? 0);
+      const cogs = Number(r.cogs ?? 0);
+      const grossProfit = revenue - cogs;
       return {
         partnerId: r.partner_id,
         customerId: r.customer_id,
@@ -450,6 +542,9 @@ export class DashboardService {
         revenue,
         returnsSum,
         netRevenue: revenue - returnsSum,
+        cogs,
+        grossProfit,
+        marginPct: revenue > 0 ? (grossProfit / revenue) * 100 : null,
         lastPurchaseAt: r.last_purchase_at ? r.last_purchase_at.toISOString() : null,
       };
     });
@@ -487,6 +582,7 @@ export class DashboardService {
       code: string | null;
       qtty: number | string | null;
       revenue: number | string | null;
+      cogs: number | string | null;
       orders_count: bigint;
     }
     interface PartnerRow {
@@ -502,6 +598,7 @@ export class DashboardService {
           g.code AS code,
           COALESCE(SUM(i.qtty), 0) AS qtty,
           COALESCE(SUM(i.sum), 0) AS revenue,
+          COALESCE(SUM(i.qtty * i."priceIn"), 0) AS cogs,
           COUNT(DISTINCT d."externalId") AS orders_count
         FROM mirror_document_items i
         JOIN mirror_documents d
@@ -533,17 +630,28 @@ export class DashboardService {
       `),
     ]);
 
-    const items: DashboardCustomerItem[] = itemRows.map((r) => ({
-      goodId: Number(r.good_id),
-      name: r.name,
-      code: r.code,
-      qtty: Number(r.qtty ?? 0),
-      revenue: Number(r.revenue ?? 0),
-      ordersCount: Number(r.orders_count ?? 0),
-    }));
+    const items: DashboardCustomerItem[] = itemRows.map((r) => {
+      const revenue = Number(r.revenue ?? 0);
+      const cogs = Number(r.cogs ?? 0);
+      const grossProfit = revenue - cogs;
+      return {
+        goodId: Number(r.good_id),
+        name: r.name,
+        code: r.code,
+        qtty: Number(r.qtty ?? 0),
+        revenue,
+        cogs,
+        grossProfit,
+        marginPct: revenue > 0 ? (grossProfit / revenue) * 100 : null,
+        ordersCount: Number(r.orders_count ?? 0),
+      };
+    });
 
     const totalRevenue = items.reduce((s, i) => s + i.revenue, 0);
     const totalQtty = items.reduce((s, i) => s + i.qtty, 0);
+    const totalCogs = items.reduce((s, i) => s + i.cogs, 0);
+    const totalGrossProfit = totalRevenue - totalCogs;
+    const totalMarginPct = totalRevenue > 0 ? (totalGrossProfit / totalRevenue) * 100 : null;
     const partner = partnerRows[0];
 
     return {
@@ -555,6 +663,9 @@ export class DashboardService {
       displayName: partner?.display_name ?? `Партнер #${partnerId}`,
       totalRevenue,
       totalQtty,
+      totalCogs,
+      totalGrossProfit,
+      totalMarginPct,
       items,
     };
   }
