@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { authApi } from './api';
 import { useAuthStore } from '@/app/auth-store';
@@ -10,9 +10,18 @@ interface Props {
 
 export function RequireAuth({ children }: Props) {
   const location = useLocation();
-  const { accessToken, user, hydrated, setAuth, clear } = useAuthStore();
+  const { accessToken, user, setAuth, clear } = useAuthStore();
 
-  // Виконуємо /me лише коли гідрація зі localStorage завершилась і немає user.
+  // Чекаємо, поки zustand-persist прочитає localStorage.
+  // Для sync-storage це моментально, але тримаємо гейт на випадок SSR/асинхронного storage.
+  const [hydrated, setHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+  useEffect(() => {
+    if (hydrated) return;
+    const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
+    if (useAuthStore.persist.hasHydrated()) setHydrated(true);
+    return unsub;
+  }, [hydrated]);
+
   const meQuery = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: authApi.me,
@@ -28,9 +37,7 @@ export function RequireAuth({ children }: Props) {
     }
   }, [meQuery.data, meQuery.isError, setAuth, clear]);
 
-  // Ще не гідрувались або запит /me триває — показуємо спінер, не редіректимо.
-  const stillLoading = !hydrated || (meQuery.isFetching && !user);
-  if (stillLoading) {
+  if (!hydrated || (meQuery.isFetching && !user)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <span className="loading loading-spinner loading-lg text-primary" />
