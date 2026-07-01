@@ -10,13 +10,13 @@ interface Props {
 
 export function RequireAuth({ children }: Props) {
   const location = useLocation();
-  const { accessToken, user, setAuth, clear } = useAuthStore();
+  const { accessToken, user, hydrated, setAuth, clear } = useAuthStore();
 
-  // Якщо є cookie refresh — http-interceptor підхопить access; пробуємо /me
+  // Виконуємо /me лише коли гідрація зі localStorage завершилась і немає user.
   const meQuery = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: authApi.me,
-    enabled: !user,
+    enabled: hydrated && !user,
     retry: false,
   });
 
@@ -28,7 +28,9 @@ export function RequireAuth({ children }: Props) {
     }
   }, [meQuery.data, meQuery.isError, setAuth, clear]);
 
-  if (meQuery.isLoading && !user) {
+  // Ще не гідрувались або запит /me триває — показуємо спінер, не редіректимо.
+  const stillLoading = !hydrated || (meQuery.isFetching && !user);
+  if (stillLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <span className="loading loading-spinner loading-lg text-primary" />
@@ -36,7 +38,7 @@ export function RequireAuth({ children }: Props) {
     );
   }
 
-  if (!user && !accessToken && !meQuery.isLoading) {
+  if (!user && !accessToken) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
