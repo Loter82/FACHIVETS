@@ -76,12 +76,12 @@ export function AppLayout() {
     <>
       <div className="flex items-center gap-3 px-5 py-5">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary">
-          <span className="text-sm font-bold text-white">Ф</span>
+          <span className="text-sm font-bold text-white">U</span>
         </div>
         <div>
-          <div className="text-sm font-semibold text-white">Фахівець CRM</div>
+          <div className="text-sm font-semibold text-white">UniBoost</div>
           <div className="text-[10px] uppercase tracking-widest text-white/40">
-            Будматеріали
+            Надбудова над Unipro
           </div>
         </div>
       </div>
@@ -179,7 +179,7 @@ export function AppLayout() {
           >
             <Menu size={18} />
           </button>
-          <span className="text-sm font-semibold">Фахівець CRM</span>
+          <span className="text-sm font-semibold">UniBoost</span>
           <div className="ml-auto flex items-center gap-2">
             <div className="dropdown dropdown-end">
               <button tabIndex={0} className="btn btn-ghost btn-sm gap-1 text-xs">

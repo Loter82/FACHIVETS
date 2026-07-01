@@ -42,8 +42,8 @@ async function bootstrap(): Promise<void> {
 
   if (config.get('NODE_ENV', { infer: true }) !== 'production') {
     const doc = new DocumentBuilder()
-      .setTitle('Фахівець CRM API')
-      .setDescription('REST API для Фахівець CRM')
+      .setTitle('UniBoost API')
+      .setDescription('REST API для UniBoost — надбудови над Unipro')
       .setVersion('0.1.0')
       .addBearerAuth()
       .build();
@@ -53,7 +53,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(port, '0.0.0.0');
   // eslint-disable-next-line no-console
-  console.info(`Фахівець CRM API готовий на http://0.0.0.0:${port}/${prefix}`);
+  console.info(`UniBoost API готовий на http://0.0.0.0:${port}/${prefix}`);
 }
 
 bootstrap().catch((err) => {

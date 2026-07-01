@@ -38,7 +38,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-base-200 p-4">
       <div className="card w-full max-w-md bg-base-100 shadow-xl">
         <div className="card-body">
-          <h1 className="card-title text-2xl">Вхід в Фахівець CRM</h1>
+          <h1 className="card-title text-2xl">Вхід в UniBoost</h1>
           <p className="text-sm text-base-content/70">Введіть свої облікові дані</p>
 
           <form
