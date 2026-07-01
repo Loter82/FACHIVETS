@@ -10,11 +10,32 @@ import { SettingsSourcesPage } from '@/features/data-sources/SettingsSourcesPage
 import { SchemaInspectorPage } from '@/features/data-sources/SchemaInspectorPage';
 import { SyncPage } from '@/features/sync/SyncPage';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
+import { PlatformLayout } from '@/features/platform/PlatformLayout';
+import { RequirePlatformAdmin } from '@/features/platform/RequirePlatformAdmin';
+import { PlatformOverviewPage } from '@/features/platform/pages/PlatformOverviewPage';
+import { PlatformTenantsPage } from '@/features/platform/pages/PlatformTenantsPage';
+import { PlatformUsersPage } from '@/features/platform/pages/PlatformUsersPage';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+
+      {/* Платформ-адмінка — окрема гілка з власним лейаутом */}
+      <Route
+        path="/platform"
+        element={
+          <RequireAuth>
+            <RequirePlatformAdmin>
+              <PlatformLayout />
+            </RequirePlatformAdmin>
+          </RequireAuth>
+        }
+      >
+        <Route index element={<PlatformOverviewPage />} />
+        <Route path="tenants" element={<PlatformTenantsPage />} />
+        <Route path="users" element={<PlatformUsersPage />} />
+      </Route>
 
       <Route
         element={

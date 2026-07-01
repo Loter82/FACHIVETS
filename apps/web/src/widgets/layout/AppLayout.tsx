@@ -41,6 +41,13 @@ export function AppLayout() {
   const clear = useAuthStore((s) => s.clear);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // PLATFORM_ADMIN не має справи з CRM-виглядом — редіректимо у /platform.
+  useEffect(() => {
+    if (user?.role === 'PLATFORM_ADMIN') {
+      navigate('/platform', { replace: true });
+    }
+  }, [user, navigate]);
+
   // Close drawer on route change
   useEffect(() => {
     setDrawerOpen(false);

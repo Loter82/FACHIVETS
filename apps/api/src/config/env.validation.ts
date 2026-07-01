@@ -29,6 +29,20 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   ENCRYPTION_KEY: z.string().min(8),
+
+  // --- Platform admin (seed on boot) ----------------------------------------
+  PLATFORM_TENANT_SLUG: z.string().default('_platform'),
+  PLATFORM_ADMIN_EMAIL: z.string().email().optional(),
+  PLATFORM_ADMIN_PASSWORD: z.string().min(8).optional(),
+
+  // --- Sync scheduler -------------------------------------------------------
+  /** Увімкнено фонового BullMQ-воркера у цьому процесі. Вимикати для web-only інстансів. */
+  SYNC_WORKER_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true'),
+  /** Concurrency воркера (одночасних sync-jobів). */
+  SYNC_WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

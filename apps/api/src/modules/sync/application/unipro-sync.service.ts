@@ -1,18 +1,19 @@
 /**
  * UniproSyncService — pull-синхронізація з Unipro MSSQL у mirror-таблиці Postgres.
  *
- * MVP-стратегія:
- *  • Довідники (entities/stores/users/partner_groups/partners/goods_groups/goods)
- *    синхронізуються повністю: deleteMany + createMany у одній транзакції.
- *  • Документи (documents/document_items) — incremental по fRV (SQL rowversion):
- *      - якщо cursor.watermarkHex є → WHERE fRV > @hex
- *      - інакше — повне завантаження (для MVP розміри прийнятні: ~16K документів)
+ * Стратегії:
+ *  • Довідники (entities/stores/users/partner_groups/partners/goods_groups/goods/store_stock)
+ *    синхронізуються через HASH_DIFF: тягнемо повний перелік з MSSQL, рахуємо SHA-1 hash
+ *    кожного рядка, порівнюємо з існуючим rowHash у Postgres і пишемо лише різницю
+ *    (insert нових, update змінених, delete видалених). Постгресові записи —
+ *    основний cost driver (Supabase), тому це головний оптимізатор.
+ *  • Документи (uniDocuments/uniDocGoods) — ROWVERSION: WHERE fRV > watermark ORDER BY fRV.
  *  • Кожен виклик створює запис SyncJob і оновлює SyncCursor по сутності.
  *
- * Поведінка ізольована від BullMQ — викликається синхронно з HTTP-запиту.
- * Коли з'явиться Redis, додамо чергу і scheduler поверх цього сервісу.
+ * Виклик — синхронний з HTTP-запиту або з BullMQ-воркера (див. SyncSchedulerService).
  */
 
+import { createHash } from 'crypto';
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Prisma, SyncEntity, SyncJobStatus } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.module';
@@ -34,8 +35,23 @@ import {
 } from './unipro-mapper';
 
 const DOC_BATCH_SIZE = 500;
+const REF_WRITE_BATCH_SIZE = 1000;
 const TX_TIMEOUT_MS = 120_000; // bulk-завантаження довідників на Supabase direct connection.
 const TX_OPTS = { timeout: TX_TIMEOUT_MS, maxWait: 30_000 } as const;
+
+/** Стратегії, які видно у SyncCursor.strategy і в результаті job. */
+export type SyncStrategy = 'HASH_DIFF' | 'ROWVERSION' | 'FULL';
+
+/** Модельні ключі Prisma для mirror-таблиць, що підтримують hash-diff. */
+type MirrorRefModel =
+  | 'mirrorEntity'
+  | 'mirrorStore'
+  | 'mirrorUser'
+  | 'mirrorPartnerGroup'
+  | 'mirrorPartner'
+  | 'mirrorGoodsGroup'
+  | 'mirrorGood'
+  | 'mirrorStoreStock';
 
 export interface JobResult {
   jobId: string;
@@ -43,7 +59,33 @@ export interface JobResult {
   recordsRead: number;
   recordsWritten: number;
   durationMs: number;
+  strategy?: SyncStrategy;
   errorMessage?: string;
+}
+
+/** SHA-1 стабільного JSON — служить як rowHash. */
+function hashPayload(payload: unknown): string {
+  const h = createHash('sha1');
+  h.update(stableStringify(payload));
+  return h.digest('hex');
+}
+
+/** Стабільна серіалізація: сортує ключі об'єктів, BigInt → string. */
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'bigint') return `"${value.toString()}"`;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
+  if (typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>).sort();
+    const parts = keys.map(
+      (k) => JSON.stringify(k) + ':' + stableStringify((value as Record<string, unknown>)[k]),
+    );
+    return '{' + parts.join(',') + '}';
+  }
+  return JSON.stringify(String(value));
 }
 
 @Injectable()
@@ -96,12 +138,16 @@ export class UniproSyncService {
           finishedAt,
           recordsRead: out.read,
           recordsWritten: out.written,
-          meta: { watermarkHex: out.watermarkHex ?? null } as Prisma.InputJsonValue,
+          meta: {
+            watermarkHex: out.watermarkHex ?? null,
+            strategy: out.strategy ?? null,
+          } as Prisma.InputJsonValue,
         },
       });
       await this.upsertCursor(tenantId, dataSourceId, entity, {
         recordsTotal: out.written,
         watermarkHex: out.watermarkHex ?? undefined,
+        strategy: out.strategy,
         success: true,
       });
       return {
@@ -110,6 +156,7 @@ export class UniproSyncService {
         recordsRead: out.read,
         recordsWritten: out.written,
         durationMs: Date.now() - t0,
+        strategy: out.strategy,
       };
     } catch (err) {
       const e = err as Error;
@@ -184,6 +231,7 @@ export class UniproSyncService {
         recordsTotal: c.recordsTotal,
         watermarkHex: c.watermarkHex,
         watermarkInt: c.watermarkInt != null ? c.watermarkInt.toString() : null,
+        strategy: c.strategy,
         lastRunAt: c.lastRunAt?.toISOString() ?? null,
         lastSuccessAt: c.lastSuccessAt?.toISOString() ?? null,
         lastErrorAt: c.lastErrorAt?.toISOString() ?? null,
@@ -221,7 +269,7 @@ export class UniproSyncService {
     entity: SyncEntity,
     ctx: MapperCtx,
     creds: MssqlCredentials,
-  ): Promise<{ read: number; written: number; watermarkHex?: string | null }> {
+  ): Promise<{ read: number; written: number; watermarkHex?: string | null; strategy: SyncStrategy }> {
     switch (entity) {
       case 'ENTITIES':
         return this.syncEntities(ctx, creds);
@@ -251,7 +299,104 @@ export class UniproSyncService {
     }
   }
 
-  // --- ДОВІДНИКИ -----------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Hash-diff helper: спільна логіка для всіх reference-таблиць.
+  // Тягнемо все з MSSQL, рахуємо hash, порівнюємо з існуючими rowHash — пишемо різницю.
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param modelKey — камелкейс-ключ моделі Prisma (наприклад 'mirrorPartner').
+   * @param mapped — уже змапені рядки. Кожен ОБОВ'ЯЗКОВО містить `externalId` і `payload`.
+   *   Поле `rowHash` буде обчислене автоматично з `payload`.
+   */
+  private async runHashDiff<
+    T extends { externalId: number | bigint; payload: unknown },
+  >(
+    ctx: MapperCtx,
+    modelKey: MirrorRefModel,
+    mapped: T[],
+  ): Promise<{ read: number; written: number; strategy: SyncStrategy }> {
+    // 1. Обчислити хеш для кожного змапеного рядка.
+    for (const m of mapped) {
+      (m as unknown as { rowHash?: string }).rowHash = hashPayload(m.payload);
+    }
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const delegate = (this.prisma as any)[modelKey];
+    const existing: Array<{ externalId: number | bigint; rowHash: string | null }> =
+      await delegate.findMany({
+        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
+        select: { externalId: true, rowHash: true },
+      });
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    const existingMap = new Map<string, string | null>();
+    for (const e of existing) existingMap.set(String(e.externalId), e.rowHash);
+
+    const seenIds = new Set<string>();
+    const toWrite: T[] = [];
+    for (const m of mapped) {
+      const key = String(m.externalId);
+      seenIds.add(key);
+      const oldHash = existingMap.get(key);
+      if (oldHash === undefined) {
+        toWrite.push(m); // new
+      } else if (oldHash !== (m as unknown as { rowHash?: string }).rowHash) {
+        toWrite.push(m); // changed
+      }
+    }
+    const toDeleteIds: Array<number | bigint> = [];
+    for (const e of existing) {
+      if (!seenIds.has(String(e.externalId))) toDeleteIds.push(e.externalId);
+    }
+    const toWriteIds = toWrite.map((w) => w.externalId);
+
+    if (toDeleteIds.length === 0 && toWriteIds.length === 0) {
+      this.logger.debug(`hash-diff ${modelKey}: no changes (${mapped.length} rows)`);
+      return { read: mapped.length, written: 0, strategy: 'HASH_DIFF' };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const txDelegate = (tx as any)[modelKey];
+      if (toDeleteIds.length) {
+        await txDelegate.deleteMany({
+          where: {
+            tenantId: ctx.tenantId,
+            dataSourceId: ctx.dataSourceId,
+            externalId: { in: toDeleteIds },
+          },
+        });
+      }
+      if (toWrite.length) {
+        // Delete-and-insert для змінених + нові разом
+        await txDelegate.deleteMany({
+          where: {
+            tenantId: ctx.tenantId,
+            dataSourceId: ctx.dataSourceId,
+            externalId: { in: toWriteIds },
+          },
+        });
+        for (let i = 0; i < toWrite.length; i += REF_WRITE_BATCH_SIZE) {
+          await txDelegate.createMany({
+            data: toWrite.slice(i, i + REF_WRITE_BATCH_SIZE),
+          });
+        }
+      }
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+    }, TX_OPTS);
+
+    this.logger.debug(
+      `hash-diff ${modelKey}: read=${mapped.length} write=${toWrite.length} delete=${toDeleteIds.length}`,
+    );
+    return {
+      read: mapped.length,
+      written: toWrite.length + toDeleteIds.length,
+      strategy: 'HASH_DIFF',
+    };
+  }
+
+  // --- ДОВІДНИКИ (hash-diff) -----------------------------------------------
 
   private async syncEntities(ctx: MapperCtx, creds: MssqlCredentials) {
     const rows = await this.mssql.query<Record<string, unknown>>(
@@ -259,13 +404,7 @@ export class UniproSyncService {
       'SELECT * FROM dbo.uniEntities',
     );
     const mapped = rows.map((r) => mapEntity(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorEntity.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) await tx.mirrorEntity.createMany({ data: mapped });
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorEntity', mapped);
   }
 
   private async syncStores(ctx: MapperCtx, creds: MssqlCredentials) {
@@ -274,13 +413,7 @@ export class UniproSyncService {
       'SELECT * FROM dbo.uniStores',
     );
     const mapped = rows.map((r) => mapStore(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorStore.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) await tx.mirrorStore.createMany({ data: mapped });
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorStore', mapped);
   }
 
   private async syncUsers(ctx: MapperCtx, creds: MssqlCredentials) {
@@ -291,13 +424,7 @@ export class UniproSyncService {
        FROM dbo.uniUsers`,
     );
     const mapped = rows.map((r) => mapUser(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorUser.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) await tx.mirrorUser.createMany({ data: mapped });
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorUser', mapped);
   }
 
   private async syncPartnerGroups(ctx: MapperCtx, creds: MssqlCredentials) {
@@ -306,13 +433,7 @@ export class UniproSyncService {
       'SELECT * FROM dbo.uniPartnersGroups',
     );
     const mapped = rows.map((r) => mapPartnerGroup(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorPartnerGroup.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) await tx.mirrorPartnerGroup.createMany({ data: mapped });
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorPartnerGroup', mapped);
   }
 
   private async syncPartners(ctx: MapperCtx, creds: MssqlCredentials) {
@@ -321,13 +442,7 @@ export class UniproSyncService {
       'SELECT * FROM dbo.uniPartners',
     );
     const mapped = rows.map((r) => mapPartner(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorPartner.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) await tx.mirrorPartner.createMany({ data: mapped });
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorPartner', mapped);
   }
 
   private async syncGoodsGroups(ctx: MapperCtx, creds: MssqlCredentials) {
@@ -336,13 +451,7 @@ export class UniproSyncService {
       'SELECT * FROM dbo.uniGoodsGroups',
     );
     const mapped = rows.map((r) => mapGoodsGroup(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorGoodsGroup.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) await tx.mirrorGoodsGroup.createMany({ data: mapped });
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorGoodsGroup', mapped);
   }
 
   private async syncGoods(ctx: MapperCtx, creds: MssqlCredentials) {
@@ -351,34 +460,17 @@ export class UniproSyncService {
       'SELECT * FROM dbo.uniGoods',
     );
     const mapped = rows.map((r) => mapGood(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorGood.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) await tx.mirrorGood.createMany({ data: mapped });
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorGood', mapped);
   }
 
   private async syncStoreStock(ctx: MapperCtx, creds: MssqlCredentials) {
-    // uniAStoreNow — невелика таблиця (≈ 13k рядків), повне перезаписування.
+    // uniAStoreNow — невелика таблиця (≈ 13k рядків).
     const rows = await this.mssql.query<Record<string, unknown>>(
       creds,
       'SELECT fId, fEntId, fStoreId, fGoodId, fQtty, fSum FROM dbo.uniAStoreNow',
     );
     const mapped = rows.map((r) => mapStoreStock(ctx, r));
-    await this.prisma.$transaction(async (tx) => {
-      await tx.mirrorStoreStock.deleteMany({
-        where: { tenantId: ctx.tenantId, dataSourceId: ctx.dataSourceId },
-      });
-      if (mapped.length) {
-        // createMany не любить великі пачки JSON — ділимо по 1000.
-        for (let i = 0; i < mapped.length; i += 1000) {
-          await tx.mirrorStoreStock.createMany({ data: mapped.slice(i, i + 1000) });
-        }
-      }
-    }, TX_OPTS);
-    return { read: rows.length, written: mapped.length };
+    return this.runHashDiff(ctx, 'mirrorStoreStock', mapped);
   }
 
   // --- ДОКУМЕНТИ (incremental по fRV) --------------------------------------
@@ -473,7 +565,12 @@ export class UniproSyncService {
       if (docRows.length < DOC_BATCH_SIZE) break;
     }
 
-    return { read: totalRead, written: totalWritten, watermarkHex: maxWatermark };
+    return {
+      read: totalRead,
+      written: totalWritten,
+      watermarkHex: maxWatermark,
+      strategy: 'ROWVERSION' as SyncStrategy,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -485,6 +582,7 @@ export class UniproSyncService {
     upd: {
       recordsTotal?: number;
       watermarkHex?: string | null;
+      strategy?: SyncStrategy;
       success: boolean;
       errorMessage?: string;
     },
@@ -497,6 +595,7 @@ export class UniproSyncService {
         : { lastErrorAt: now, lastError: upd.errorMessage ?? 'unknown' }),
       ...(upd.recordsTotal !== undefined ? { recordsTotal: upd.recordsTotal } : {}),
       ...(upd.watermarkHex !== undefined ? { watermarkHex: upd.watermarkHex } : {}),
+      ...(upd.strategy !== undefined ? { strategy: upd.strategy } : {}),
     };
     const create: Prisma.SyncCursorUncheckedCreateInput = {
       tenantId,
@@ -508,6 +607,7 @@ export class UniproSyncService {
       lastError: upd.success ? null : (upd.errorMessage ?? 'unknown'),
       recordsTotal: upd.recordsTotal ?? 0,
       watermarkHex: upd.watermarkHex ?? null,
+      strategy: upd.strategy ?? null,
     };
     await this.prisma.syncCursor.upsert({
       where: {

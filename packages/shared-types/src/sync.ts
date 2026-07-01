@@ -22,6 +22,8 @@ export interface SyncCursorDto {
   recordsTotal: number;
   watermarkHex: string | null;
   watermarkInt: string | null;
+  /** Стратегія, використана востаннє: HASH_DIFF | ROWVERSION | FULL. */
+  strategy: string | null;
   lastRunAt: string | null;
   lastSuccessAt: string | null;
   lastErrorAt: string | null;

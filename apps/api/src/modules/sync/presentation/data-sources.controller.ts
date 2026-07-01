@@ -77,6 +77,8 @@ export class DataSourcesController {
       credentials,
       settings: dto.settings,
       status: dto.status,
+      autoSyncEnabled: dto.autoSyncEnabled,
+      syncIntervalMinutes: dto.syncIntervalMinutes,
     });
   }
 

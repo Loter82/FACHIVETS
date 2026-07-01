@@ -13,6 +13,8 @@ datasource db {
 // =============================================================================
 
 enum UserRole {
+  /// Власник платформи (Loter): доступ до /platform, керування тенантами.
+  PLATFORM_ADMIN
   OWNER
   ADMIN
   MANAGER
@@ -149,6 +151,14 @@ model DataSource {
   credentialsCipher String
   /// Публічні (нешифровані) налаштування: розклад, які сутності синхронізувати, обмеження тощо.
   settings          Json             @default("{}")
+  /// Увімкнено автоматичну синхронізацію по розкладу.
+  autoSyncEnabled   Boolean          @default(false)
+  /// Інтервал автосинку в хвилинах (мін. 5, за замовч. 15).
+  syncIntervalMinutes Int            @default(15)
+  /// Наступна планова синхронізація — оновлюється воркером після завершення job'у.
+  nextScheduledAt   DateTime?
+  /// Час останнього автоматичного запуску (не test/manual).
+  lastAutoRunAt     DateTime?
   lastTestedAt      DateTime?
   lastSuccessAt     DateTime?
   lastErrorAt       DateTime?
@@ -213,6 +223,8 @@ model SyncCursor {
   watermarkHex  String?
   /// Максимальний extId, синхронізований востаннє (fallback для довідників).
   watermarkInt  BigInt?
+  /// Стратегія, використана востаннє: FULL | ROWVERSION | HASH_DIFF.
+  strategy      String?
   recordsTotal  Int        @default(0)
   lastRunAt     DateTime?
   lastSuccessAt DateTime?
@@ -243,6 +255,8 @@ model MirrorEntity {
   address      String?
   state        Int?
   groupId      Int?
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -268,6 +282,8 @@ model MirrorStore {
   groupId      Int?
   priceId      Int?
   priceId2     Int?
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -292,6 +308,8 @@ model MirrorUser {
   cardNumber   String?
   state        Int?
   groupId      Int?
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -314,6 +332,8 @@ model MirrorPartnerGroup {
   cl           Int?
   cr           Int?
   clev         Int?
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -348,6 +368,8 @@ model MirrorPartner {
   groupId      Int?
   /// Запропонована назва для CRM-сутності клієнта (=fName fallback fNamePrint fallback fCode).
   displayName  String?
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -372,6 +394,8 @@ model MirrorGoodsGroup {
   cr           Int?
   clev         Int?
   markUp       Float?
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -415,6 +439,8 @@ model MirrorGood {
   mainPartner  Int?
   /// Додаткові поля fpdop1..fpdop4 як JSON.
   customFields Json     @default("[]")
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
@@ -535,6 +561,8 @@ model MirrorStoreStock {
   goodId       Int
   qtty         Float
   sum          Float
+  /// SHA-1 hash по payload для hash-diff інкременту.
+  rowHash      String?
   payload      Json
   syncedAt     DateTime @default(now())
 

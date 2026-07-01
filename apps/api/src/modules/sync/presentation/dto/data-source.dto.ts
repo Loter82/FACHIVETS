@@ -82,6 +82,18 @@ export class UpdateDataSourceDto {
   @IsOptional()
   @IsEnum(['DRAFT', 'ACTIVE', 'DISABLED'])
   status?: 'DRAFT' | 'ACTIVE' | 'DISABLED';
+
+  @ApiPropertyOptional({ description: 'Увімкнути автоматичну синхронізацію по розкладу.' })
+  @IsOptional()
+  @IsBoolean()
+  autoSyncEnabled?: boolean;
+
+  @ApiPropertyOptional({ minimum: 5, maximum: 1440, description: 'Інтервал у хвилинах.' })
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  @Max(1440)
+  syncIntervalMinutes?: number;
 }
 
 export class TestConnectionDto {

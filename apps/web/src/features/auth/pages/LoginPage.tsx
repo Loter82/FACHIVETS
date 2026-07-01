@@ -23,7 +23,8 @@ export function LoginPage() {
     mutationFn: authApi.login,
     onSuccess: (data) => {
       setAuth(data.accessToken, data.user);
-      navigate(from, { replace: true });
+      const dest = data.user.role === 'PLATFORM_ADMIN' ? '/platform' : from;
+      navigate(dest, { replace: true });
     },
     onError: (err: unknown) => {
       const msg =

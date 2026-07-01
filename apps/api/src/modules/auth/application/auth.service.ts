@@ -31,7 +31,7 @@ export class AuthService {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Невірний email або пароль');
 
-    if (user.tenant.status !== 'ACTIVE') {
+    if (user.tenant.status !== 'ACTIVE' && user.role !== 'PLATFORM_ADMIN') {
       throw new UnauthorizedException('Тенант неактивний');
     }
 

@@ -3,6 +3,7 @@ export * from './common';
 export * from './customer';
 export * from './dashboard';
 export * from './data-source';
+export * from './platform';
 export * from './stock';
 export * from './sync';
 export * from './tenant';

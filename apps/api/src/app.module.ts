@@ -21,6 +21,7 @@ import { SyncModule } from './modules/sync/sync.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { StockModule } from './modules/stock/stock.module';
+import { PlatformModule } from './modules/platform/platform.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { StockModule } from './modules/stock/stock.module';
     CustomersModule,
     DashboardModule,
     StockModule,
+    PlatformModule,
   ],
   providers: [
     TenantContextService,

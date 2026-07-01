@@ -1,4 +1,4 @@
-export type UserRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'MARKETER' | 'VIEWER';
+export type UserRole = 'PLATFORM_ADMIN' | 'OWNER' | 'ADMIN' | 'MANAGER' | 'MARKETER' | 'VIEWER';
 export type UserStatus = 'ACTIVE' | 'INVITED' | 'DISABLED';
 
 export interface UserDto {

@@ -36,6 +36,12 @@ export interface DataSourceDto {
   /** Безпечне резюме конфігу: host, database, user — пароль НІКОЛИ не повертається. */
   summary: DataSourceSummary;
   settings: Record<string, unknown>;
+  /** Автоматична синхронізація увімкнена. */
+  autoSyncEnabled: boolean;
+  /** Інтервал автосинку в хвилинах. */
+  syncIntervalMinutes: number;
+  nextScheduledAt: string | null;
+  lastAutoRunAt: string | null;
   lastTestedAt: string | null;
   lastSuccessAt: string | null;
   lastErrorAt: string | null;
@@ -66,6 +72,8 @@ export interface UpdateDataSourceRequest {
   credentials?: DataSourceCredentials;
   settings?: Record<string, unknown>;
   status?: Exclude<DataSourceStatus, 'ERROR'>;
+  autoSyncEnabled?: boolean;
+  syncIntervalMinutes?: number;
 }
 
 export interface TestConnectionRequest {
